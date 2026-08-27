@@ -9345,31 +9345,39 @@ body.tracking-active #nav-contact-section {
 
   /* ── Command dock: full-width bottom bar ── */
   #command-dock {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    max-width: 100%;
-    transform: none;
-    border-radius: 0;
-    padding: 4px env(safe-area-inset-right, 4px) env(safe-area-inset-bottom, 4px) env(safe-area-inset-left, 4px);
-    grid-template-columns: 1fr;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    transform: none !important;
+    border-radius: 0 !important;
+    padding: 4px env(safe-area-inset-right, 4px) env(safe-area-inset-bottom, 4px) env(safe-area-inset-left, 4px) !important;
+    grid-template-columns: 1fr !important;
     grid-template-areas:
       'voice'
       'locations'
-      'presets';
-    gap: 2px;
-    z-index: 145;
+      'presets' !important;
+    gap: 2px !important;
+    z-index: 145 !important;
   }
 
-  #command-dock > #gev-voice-control { grid-area: voice; }
-  #command-dock > #location-bar { grid-area: locations; }
-  #command-dock > #control-panel { grid-area: presets; }
+  #command-dock > #gev-voice-control { grid-area: voice !important; }
+  #command-dock > #location-bar { grid-area: locations !important; }
+  #command-dock > #control-panel { grid-area: presets !important; }
 
   #command-dock > #location-bar,
   #command-dock > #control-panel {
-    border: none;
-    border-top: 1px solid rgba(123, 189, 211, 0.12);
+    position: relative !important;
+    inset: auto !important;
+    left: auto !important;
+    right: auto !important;
+    top: auto !important;
+    bottom: auto !important;
+    border: none !important;
+    border-top: 1px solid rgba(123, 189, 211, 0.12) !important;
+    transform: none !important;
+    max-width: none !important;
   }
 
   /* Trays pop up from the dock instead of expanding in-place */
@@ -9385,25 +9393,27 @@ body.tracking-active #nav-contact-section {
 
   /* ── Left panel stack: top-left drawer ── */
   #left-panel-stack {
-    top: 8px;
-    bottom: auto;
-    left: 8px;
-    width: auto;
-    gap: 4px;
-    align-items: flex-start;
+    top: 8px !important;
+    bottom: auto !important;
+    left: 8px !important;
+    width: auto !important;
+    gap: 4px !important;
+    align-items: flex-start !important;
   }
 
   #left-panel-stack .panel-collapsible.collapsed {
-    width: 44px;
+    width: 44px !important;
   }
 
   #left-panel-stack .panel-collapsible:not(.collapsed) {
-    width: min(280px, calc(100vw - 16px));
+    width: min(280px, calc(100vw - 16px)) !important;
   }
 
   #data-panel {
     --panel-expanded-width: min(280px, calc(100vw - 16px));
-    left: 8px;
+    left: 8px !important;
+    top: auto !important;
+    bottom: auto !important;
   }
 
   #data-panel .panel-header .panel-title { font-size: 9px; letter-spacing: 1px; }
@@ -9411,15 +9421,15 @@ body.tracking-active #nav-contact-section {
 
   /* ── Right context rail: hidden by default, swipe-in ── */
   #right-context-rail {
-    position: fixed;
-    top: 8px;
-    right: -340px;
-    bottom: auto;
-    width: min(300px, calc(100vw - 60px));
-    max-height: calc(100vh - 16px);
-    z-index: 200;
-    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-    pointer-events: auto;
+    position: fixed !important;
+    top: 8px !important;
+    right: -340px !important;
+    bottom: auto !important;
+    width: min(300px, calc(100vw - 60px)) !important;
+    max-height: calc(100vh - 16px) !important;
+    z-index: 200 !important;
+    transition: right 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    pointer-events: auto !important;
   }
 
   #right-context-rail.mobile-open {

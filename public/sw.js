@@ -1,4 +1,4 @@
-const CACHE_NAME = 'gev-shell-v1';
+const CACHE_NAME = 'gev-shell-v2';
 const SHELL_ASSETS = [
   '/',
   '/index.html',
