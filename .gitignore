@@ -10,3 +10,8 @@ output/
 .DS_Store
 .gstack/
 3d-models/
+
+# Local voice pipeline binaries (large, not tracked)
+piper/
+whisper.cpp/
+whisper.cpp-build/
