@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
   <title>God's Eye View</title>
   <link rel="icon" type="image/svg+xml" href="/logo.svg" />
   <link rel="stylesheet" href="/style.css" />
@@ -11,6 +11,13 @@
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20,400,0,0" rel="stylesheet" />
   <link href="https://fonts.googleapis.com/icon?family=Material+Icons+Round" rel="stylesheet" />
+  <!-- PWA -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#0a0a0f" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="God's Eye View" />
+  <link rel="apple-touch-icon" href="/icons/icon-192.png" />
 </head>
 <body>
   <div id="cesiumContainer"></div>
@@ -476,6 +483,11 @@
     </div>
   </div>
   <button id="clean-view-exit" title="Return UI controls">EXIT CLEAN VIEW</button>
+
+  <!-- Mobile context rail toggle (hidden on desktop) -->
+  <button id="mobile-context-toggle" class="mobile-context-toggle" type="button" aria-label="Open context panel" title="Open context panel" style="display:none;">
+    <span class="material-symbols-outlined">radar</span>
+  </button>
 
   <!-- Unified bottom command dock: locations, voice (injected at runtime), visual presets -->
   <div id="command-dock" aria-label="Navigation, voice, and visual preset controls">

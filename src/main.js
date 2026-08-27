@@ -21,6 +21,44 @@ import { SceneDirector } from './scenes/director.js';
 import { initGevVoiceCommands } from './voice/gevRealtime.js';
 import { initLocalVoiceCommands } from './voice/localVoice.js';
 import { initEntityEnrichment } from './voice/entityEnrichment.js';
+
+// ── Mobile context rail toggle ─────────────────────────────────────────────────
+(function initMobileContextToggle() {
+  const toggle = document.getElementById('mobile-context-toggle');
+  const rail = document.getElementById('right-context-rail');
+  if (!toggle || !rail) return;
+
+  function isMobile() {
+    return window.matchMedia('(max-width: 720px)').matches;
+  }
+
+  function updateVisibility() {
+    toggle.style.display = isMobile() ? 'flex' : 'none';
+    if (!isMobile()) rail.classList.remove('mobile-open');
+  }
+
+  toggle.addEventListener('click', () => {
+    rail.classList.toggle('mobile-open');
+  });
+
+  // Close rail when tapping outside
+  document.addEventListener('pointerdown', (e) => {
+    if (!isMobile()) return;
+    if (!rail.classList.contains('mobile-open')) return;
+    if (rail.contains(e.target) || toggle.contains(e.target)) return;
+    rail.classList.remove('mobile-open');
+  });
+
+  updateVisibility();
+  window.addEventListener('resize', updateVisibility);
+})();
+
+// ── PWA service worker registration ────────────────────────────────────────────
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
 import { MapStackController } from './mapStackController.js';
 import { initAnnotations } from './annotations/index.js';
 import { initLogoGaze } from './logoGaze.js';
