@@ -341,6 +341,26 @@ export function findPoiByName(query) {
 /** Distinguishes an authority veto from a genuine not-found result. */
 export const CANCELLED_SEARCH = Object.freeze({ cancelled: true });
 
+/** Free Nominatim (OpenStreetMap) geocoding fallback — no API key needed. */
+async function nominatimGeocode(query) {
+  try {
+    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    const data = await res.json();
+    if (!data.length) return null;
+    const r = data[0];
+    return {
+      lat: parseFloat(r.lat),
+      lng: parseFloat(r.lon),
+      label: r.display_name || query,
+      types: r.type ? [r.type] : [],
+    };
+  } catch { return null; }
+}
+
 /**
  * Geocode a place name using Google Geocoding API, then fly there at a scale
  * appropriate to the request. Countries and cities use their viewport by
@@ -369,6 +389,17 @@ export async function searchAndFlyTo(viewer, query, options = {}) {
   let types = result?.types || [];
   let viewport = result ? (result.geometry.bounds || result.geometry.viewport) : null;
 
+  // Fallback to Nominatim if Google Maps fails (invalid key, quota, etc.)
+  if (!result) {
+    const nom = await nominatimGeocode(query);
+    if (nom) {
+      lat = nom.lat;
+      lng = nom.lng;
+      label = nom.label;
+      types = nom.types;
+    }
+  }
+
   // Places-near-view recovery (annotationResolver's twin): a missed geocode, or one
   // that landed implausibly far from the view centre, snaps back to a view-biased
   // Places hit within the trust bound — "the Capitol" means the one on screen.
@@ -379,7 +410,7 @@ export async function searchAndFlyTo(viewer, query, options = {}) {
     label = recovered.label || label || query;
     types = recovered.types || [];
     viewport = placesViewportToBounds(recovered.viewport) || viewport;
-  } else if (!result) {
+  } else if (!result && lat == null) {
     return null;
   }
 

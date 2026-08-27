@@ -52,9 +52,17 @@ const PANEL_ALIASES = new Map([
   ['basemap', 'control-panel'],
   ['map sources', 'control-panel'],
   ['sources', 'control-panel'],
+  ['voice commands', 'voice-commands-panel'],
+  ['voice', 'voice-commands-panel'],
+  ['voice help', 'voice-commands-panel'],
+  ['commands', 'voice-commands-panel'],
+  ['nav controls', 'nav-controls-panel'],
+  ['navigation controls', 'nav-controls-panel'],
+  ['controls', 'nav-controls-panel'],
+  ['keyboard', 'nav-controls-panel'],
 ]);
 
-const PANEL_IDS = new Set(['data-panel', 'location-bar', 'control-panel', 'cctv-panel', 'radio-panel', 'global-context-panel', 'scene-panel', 'pp-toggles']);
+const PANEL_IDS = new Set(['data-panel', 'location-bar', 'control-panel', 'cctv-panel', 'radio-panel', 'global-context-panel', 'scene-panel', 'pp-toggles', 'voice-commands-panel', 'nav-controls-panel']);
 const CONTEXT_MODE_ALIASES = new Map([
   ['off', 'off'],
   ['none', 'off'],
@@ -896,6 +904,31 @@ export function createGevActionRunner({ viewer, styleManager, dataManager, scene
 
     if (name === 'control_radio') {
       return controlRadio(viewer, dataManager, args, runOptions);
+    }
+
+    // Voice assistant alias — maps to fly_to_location with preset name
+    if (name === 'fly_to_preset') {
+      return runGevAction('fly_to_location', {
+        query: args.name || args.query || args.location,
+        rangeM: args.rangeM || 12192, // default ~40,000 ft
+      }, runOptions);
+    }
+
+    // Voice assistant aliases
+    if (name === 'fly_to_globe') {
+      return runGevAction('zoom_to_globe', args, runOptions);
+    }
+    if (name === 'open_panel') {
+      return runGevAction('set_panel_open', { panelId: args.panelId, open: true }, runOptions);
+    }
+    if (name === 'close_panel') {
+      return runGevAction('set_panel_open', { panelId: args.panelId, open: false }, runOptions);
+    }
+    if (name === 'toggle_panel') {
+      return runGevAction('set_panel_open', { panelId: args.panelId, toggle: true }, runOptions);
+    }
+    if (name === 'toggle_layer') {
+      return runGevAction('set_layer_visibility', { layerId: args.layerId, toggle: true }, runOptions);
     }
 
     if (name === 'track_entity') {

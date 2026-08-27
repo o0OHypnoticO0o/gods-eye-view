@@ -1324,6 +1324,8 @@ const OPENAI_REALTIME_REASONING_DEFAULT = 'low';
 const OPENAI_REALTIME_CONTEXT_TOKENS_DEFAULT = 3000;
 const OPENAI_REALTIME_CONTEXT_RETENTION_DEFAULT = 0.5;
 const OPENAI_HUD_SUMMARY_MODEL_DEFAULT = 'gpt-5-nano';
+const OPENAI_BASE_URL_DEFAULT = 'https://api.openai.com';
+const LOCAL_VOICE_WS_URL_DEFAULT = 'ws://localhost:8765';
 const REALTIME_DEBUG_LOG_DIR = path.join(__dirname, '.gev-logs');
 const REALTIME_DEBUG_LOG_FILE = path.join(REALTIME_DEBUG_LOG_DIR, 'realtime-conversations.jsonl');
 const REALTIME_DEBUG_LOG_MAX_BYTES = 8 * 1024 * 1024;
@@ -1497,6 +1499,7 @@ function buildOpenSkyHeaders({ cacheStatus, requestedMode, usedMode, reason, sta
  */
 function celestrakProxy() {
   const TLE_TTL_MS = 6 * 3600_000;
+  const ID_TLE_TTL_MS = 3600_000; // 1 hour for individual NORAD ID lookups
   const CACHE_DIR = path.join(process.cwd(), '.gev-cache');
   const mem = new Map(); // group -> { at: epochMs, body: string }
   const inflight = new Map(); // group -> Promise<{at, body}|null>
@@ -1541,6 +1544,54 @@ function celestrakProxy() {
     name: 'celestrak-proxy',
     configureServer(server) {
       server.middlewares.use('/api/celestrak', async (req, res) => {
+        // Check for individual NORAD ID lookup: /api/celestrak?id=<noradId>
+        const urlObj = new URL(req.url || '/', 'http://localhost');
+        const noradId = urlObj.searchParams.get('id');
+
+        if (noradId) {
+          // Individual satellite lookup by NORAD catalog number
+          if (!/^\d+$/.test(noradId)) {
+            res.writeHead(400, { 'Content-Type': 'text/plain' });
+            res.end('invalid NORAD ID');
+            return;
+          }
+          const cacheKey = `id-${noradId}`;
+          try {
+            const now = Date.now();
+            let entry = mem.get(cacheKey);
+            if (!entry) {
+              entry = await readDisk(cacheKey);
+              if (entry) mem.set(cacheKey, entry);
+            }
+            if (entry && now - entry.at < ID_TLE_TTL_MS) {
+              res.writeHead(200, { 'Content-Type': 'text/plain', 'x-tle-cache': 'HIT' });
+              res.end(entry.body);
+              return;
+            }
+            const upstreamUrl = `https://celestrak.org/NORAD/elements/gp.php?CATNR=${noradId}&FORMAT=tle`;
+            const response = await fetch(upstreamUrl, {
+              headers: { 'User-Agent': 'gods-eye-view-celestrak-proxy/1.0 (+https://github.com/bilawalsidhu/gods-eye-view)' },
+              signal: AbortSignal.timeout(10_000),
+            });
+            if (!response.ok) {
+              res.writeHead(response.status, { 'Content-Type': 'text/plain' });
+              res.end(`celestrak upstream ${response.status}`);
+              return;
+            }
+            const body = await response.text();
+            const newEntry = { at: now, body };
+            mem.set(cacheKey, newEntry);
+            writeDisk(cacheKey, newEntry).catch(() => {});
+            res.writeHead(200, { 'Content-Type': 'text/plain', 'x-tle-cache': 'MISS' });
+            res.end(body);
+          } catch (err) {
+            res.writeHead(502, { 'Content-Type': 'text/plain' });
+            res.end(`celestrak id lookup error: ${err?.message || err}`);
+          }
+          return;
+        }
+
+        // Bulk group query (existing behavior)
         const group = String(req.url || '').replace(/^\//, '').split('?')[0];
         if (!/^[a-z0-9-]+$/i.test(group)) {
           res.writeHead(400, { 'Content-Type': 'text/plain' });
@@ -4981,7 +5032,8 @@ function openAiRealtimeProxy() {
       try {
         const body = await readRequestBody(req, 64 * 1024);
         const context = JSON.parse(body || '{}');
-        const response = await fetch('https://api.openai.com/v1/responses', {
+        const baseUrl = (process.env.OPENAI_BASE_URL || OPENAI_BASE_URL_DEFAULT).replace(/\/+$/, '');
+        const response = await fetch(`${baseUrl}/v1/responses`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${apiKey}`,
@@ -4997,7 +5049,7 @@ function openAiRealtimeProxy() {
               'Output exactly five words with no title, punctuation, markdown, or introductory phrase.',
             ].join(' '),
             input: JSON.stringify(context),
-            reasoning: { effort: 'minimal' },
+            reasoning: { effort: process.env.OPENAI_HUD_SUMMARY_REASONING || 'minimal' },
             max_output_tokens: 100,
           }),
         });
@@ -7373,6 +7425,7 @@ export default defineConfig(({ mode }) => {
     define: {
       'import.meta.env.GOOGLE_MAPS_API_KEY': JSON.stringify(env.GOOGLE_MAPS_API_KEY),
       'import.meta.env.CESIUM_ION_TOKEN': JSON.stringify(env.CESIUM_ION_TOKEN),
+      'import.meta.env.LOCAL_VOICE_WS_URL': JSON.stringify(env.LOCAL_VOICE_WS_URL || ''),
     },
     build: {
       // The Cesium engine bundle is inherently large; raise the warning ceiling

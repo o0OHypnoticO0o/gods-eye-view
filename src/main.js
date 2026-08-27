@@ -19,6 +19,8 @@ import { LAYER_STATE_REGISTRY } from './data/layerState.js';
 import { registerDataCredits } from './data/dataCredits.js';
 import { SceneDirector } from './scenes/director.js';
 import { initGevVoiceCommands } from './voice/gevRealtime.js';
+import { initLocalVoiceCommands } from './voice/localVoice.js';
+import { initEntityEnrichment } from './voice/entityEnrichment.js';
 import { MapStackController } from './mapStackController.js';
 import { initAnnotations } from './annotations/index.js';
 import { initLogoGaze } from './logoGaze.js';
@@ -286,6 +288,9 @@ async function init() {
     viewer.trackedEntityChanged.addEventListener(() => {
       if (viewer.trackedEntity) holdContinuousRender('tracked-entity');
       else releaseContinuousRender('tracked-entity');
+
+      // Toggle body class for nav-controls-panel "Contact Focused" section.
+      document.body.classList.toggle('tracking-active', !!viewer.trackedEntity);
     });
 
     // Hidden-state suspension (perf wave 2): when the window/tab is hidden,
@@ -324,7 +329,15 @@ async function init() {
       getRenderGovernorDiagnostics,
       requestRender: governorRequestRender,
     };
-    window.__godsEyeView.voiceCommands = initGevVoiceCommands({ viewer, styleManager, dataManager, sceneDirector, annotations });
+    // Prefer local voice pipeline (Whisper + LM Studio + Piper) when WS URL is configured,
+    // otherwise fall back to OpenAI Realtime API.
+    const localWs = import.meta.env.LOCAL_VOICE_WS_URL;
+    window.__godsEyeView.voiceCommands = localWs
+      ? initLocalVoiceCommands({ viewer, styleManager, dataManager, sceneDirector, annotations })
+      : initGevVoiceCommands({ viewer, styleManager, dataManager, sceneDirector, annotations });
+
+    // Auto-enrich selected entities with public API data (flights, satellites, etc.)
+    initEntityEnrichment();
 
   } catch (error) {
     console.error("God's Eye View initialization failed:", error);

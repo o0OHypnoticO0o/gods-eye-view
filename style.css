@@ -684,6 +684,9 @@ body.cockpit-mode #cockpit-cloud-effects.active {
   color: var(--text-dim);
   text-transform: uppercase;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .panel-divider {
@@ -1418,7 +1421,9 @@ body.ui-clean-view #data-panel,
 body.ui-clean-view #cctv-panel,
 body.ui-clean-view #radio-panel,
 body.ui-clean-view #global-context-panel,
-body.ui-clean-view #scene-panel {
+body.ui-clean-view #scene-panel,
+body.ui-clean-view #voice-commands-panel,
+body.ui-clean-view #nav-controls-panel {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -6335,7 +6340,9 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #left-panel-stack > #data-panel,
 #left-panel-stack > #cctv-panel,
 #left-panel-stack > #global-context-panel,
-#left-panel-stack > #scene-panel {
+#left-panel-stack > #scene-panel,
+#left-panel-stack > #voice-commands-panel,
+#left-panel-stack > #nav-controls-panel {
   position: relative;
   top: auto;
   right: auto;
@@ -6357,6 +6364,10 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 }
 
 #left-panel-stack > #scene-panel { order: 4; }
+
+#left-panel-stack > #voice-commands-panel { order: 5; }
+
+#left-panel-stack > #nav-controls-panel { order: 6; }
 
 /*
  * Runtime focus mode: the layout engine applies this only when the expanded
@@ -6684,13 +6695,17 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #param-slider-panel.collapsed #param-sliders,
 #location-bar.collapsed .poi-row-container,
 #location-bar.collapsed .location-bar-divider,
-#location-bar.collapsed .location-city-row {
+#location-bar.collapsed .location-city-row,
+#voice-commands-panel.collapsed .voice-commands-content,
+#nav-controls-panel.collapsed .nav-controls-content {
   display: none !important;
 }
 
 #data-panel.collapsed,
 #cctv-panel.collapsed,
-#scene-panel.collapsed {
+#scene-panel.collapsed,
+#voice-commands-panel.collapsed,
+#nav-controls-panel.collapsed {
   width: var(--left-collapsed-width);
 }
 
@@ -6699,7 +6714,9 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #data-panel.collapsed .panel-title,
 #cctv-panel.collapsed .panel-title,
 #radio-panel.collapsed .panel-title,
-#scene-panel.collapsed .panel-title {
+#scene-panel.collapsed .panel-title,
+#voice-commands-panel.collapsed .panel-title,
+#nav-controls-panel.collapsed .panel-title {
   font-size: 8px;
   letter-spacing: 1.8px;
 }
@@ -6709,6 +6726,8 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #cctv-panel.collapsed .cctv-panel-inner,
 #radio-panel.collapsed .radio-panel-inner,
 #scene-panel.collapsed .scene-panel-inner,
+#voice-commands-panel.collapsed .panel-inner,
+#nav-controls-panel.collapsed .panel-inner,
 #param-slider-panel.collapsed,
 #location-bar.collapsed .location-inner {
   padding-bottom: 10px;
@@ -6720,6 +6739,8 @@ body.cockpit-mode #intel-hud .hud-right-edge { right: 22px; }
 #radio-panel.collapsed .panel-header,
 #global-context-panel.collapsed .panel-header,
 #scene-panel.collapsed .panel-header,
+#voice-commands-panel.collapsed .panel-header,
+#nav-controls-panel.collapsed .panel-header,
 #param-slider-panel.collapsed .param-panel-header {
   margin-bottom: 2px;
 }
@@ -6741,7 +6762,9 @@ body.recording-mode #cctv-panel,
 body.recording-mode #radio-panel,
 body.recording-mode #global-context-panel,
 body.recording-mode #gev-voice-control,
-body.recording-mode #scene-panel {
+body.recording-mode #scene-panel,
+body.recording-mode #voice-commands-panel,
+body.recording-mode #nav-controls-panel {
   opacity: 0 !important;
   visibility: hidden !important;
   pointer-events: none !important;
@@ -9160,4 +9183,124 @@ body.scene-playback-mode #first-run-launcher {
   .first-run-arrow { transition: none; }
   /* Scrolling a tile into view must not animate either. */
   .first-run-choices { scroll-behavior: auto; }
+}
+
+/* ── Voice Commands Panel ───────────────────── */
+#voice-commands-panel,
+#nav-controls-panel {
+  --panel-expanded-width: 280px;
+  position: fixed;
+  left: var(--left-stack-x);
+  right: auto;
+  bottom: auto;
+  z-index: 100;
+  width: var(--panel-expanded-width);
+}
+
+#voice-commands-panel .panel-glow,
+#nav-controls-panel .panel-glow {
+  position: absolute;
+  inset: -20px;
+  background: radial-gradient(ellipse at center, var(--accent-dim) 0%, transparent 60%);
+  filter: blur(20px);
+  opacity: 0.25;
+  pointer-events: none;
+}
+
+#voice-commands-panel .panel-inner,
+#nav-controls-panel .panel-inner {
+  max-height: 50vh;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(0, 212, 255, 0.5) rgba(255, 255, 255, 0.04);
+}
+
+#voice-commands-panel .panel-inner::-webkit-scrollbar,
+#nav-controls-panel .panel-inner::-webkit-scrollbar {
+  width: 5px;
+}
+
+#voice-commands-panel .panel-inner::-webkit-scrollbar-thumb,
+#nav-controls-panel .panel-inner::-webkit-scrollbar-thumb {
+  background: rgba(0, 212, 255, 0.4);
+  border-radius: 999px;
+}
+
+.voice-commands-content,
+.nav-controls-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.voice-section,
+.nav-section {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.voice-section-title,
+.nav-section-title {
+  font-family: var(--font-mono);
+  font-size: 8px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 2px;
+  padding-bottom: 3px;
+  border-bottom: 1px solid rgba(0, 212, 255, 0.12);
+}
+
+.voice-cmd {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+}
+
+.voice-cmd:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-primary);
+}
+
+.nav-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background var(--transition-fast);
+}
+
+.nav-row:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.nav-key {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.8px;
+  color: var(--accent);
+  min-width: 80px;
+  flex-shrink: 0;
+  text-shadow: 0 0 6px rgba(0, 212, 255, 0.25);
+}
+
+.nav-desc {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
+}
+
+#nav-contact-section {
+  display: none;
+}
+
+body.tracking-active #nav-contact-section {
+  display: flex;
 }
