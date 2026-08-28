@@ -9352,14 +9352,22 @@ body.tracking-active #nav-contact-section {
     --left-stack-x: 8px;
     --left-stack-top: 16px;
     --left-stack-gap: 8px;
-    --left-collapsed-width: 44px;
+    --left-collapsed-width: 48px;
     bottom: 80px;
     width: auto;
     gap: 4px;
+    max-width: calc(100vw - 16px);
   }
 
   #left-panel-stack > .panel-collapsible {
     pointer-events: auto;
+    max-width: min(280px, calc(100vw - 16px));
+  }
+
+  /* Override expanded widths for all left-panel children */
+  #left-panel-stack > .panel-collapsible:not(.collapsed) {
+    --panel-expanded-width: min(280px, calc(100vw - 16px));
+    width: min(280px, calc(100vw - 16px));
   }
 
   #data-panel {
