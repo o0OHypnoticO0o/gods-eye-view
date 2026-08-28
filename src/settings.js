@@ -58,6 +58,13 @@ export class SettingsManager {
    * Call once from main.js after DOM is ready.
    */
   async init() {
+    // Default non-core tiers to collapsed on first load
+    if (!sessionStorage.getItem('godsEyeView.settings.init')) {
+      for (const tier of TIER_ORDER) {
+        if (tier !== 'core') this._collapsedTiers.add(tier);
+      }
+      sessionStorage.setItem('godsEyeView.settings.init', '1');
+    }
     this._injectHTML();
     this._bindEvents();
     await this.refresh();
@@ -296,7 +303,6 @@ export class SettingsManager {
     const qualityBadge = field.quality ? this._renderQualityBadge(field.quality) : '';
     const setupLink = field.setupUrl ? `<a class="settings-field-setup" href="${this._escapeAttr(field.setupUrl)}" target="_blank" rel="noopener" title="Setup guide">
       <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
-      <span>Setup Guide</span>
     </a>` : '';
 
     return `
@@ -305,6 +311,9 @@ export class SettingsManager {
           <span class="settings-field-status ${statusClass}" title="${statusClass}">${statusDot}</span>
           <label class="settings-field-label" for="settings-${field.key}">${field.label}</label>
           <span class="settings-field-cost">${field.cost}</span>
+          ${qualityBadge}
+          ${setupLink}
+          <button class="settings-test-btn" data-key="${field.key}" type="button" title="Test connection">Test</button>
         </div>
         <div class="settings-field-input-row">
           <input
@@ -320,15 +329,8 @@ export class SettingsManager {
           ${isPassword ? `<button class="settings-reveal-btn" data-key="${field.key}" type="button" title="Toggle visibility" aria-label="Toggle visibility">
             <span class="material-symbols-outlined" aria-hidden="true">${revealed ? 'visibility_off' : 'visibility'}</span>
           </button>` : ''}
-          <button class="settings-test-btn" data-key="${field.key}" type="button" title="Test connection">Test</button>
         </div>
-        <div class="settings-field-footer">
-          <div class="settings-field-help">${field.help}</div>
-          <div class="settings-field-meta">
-            ${qualityBadge}
-            ${setupLink}
-          </div>
-        </div>
+        <div class="settings-field-help">${field.help}</div>
       </div>
     `;
   }
