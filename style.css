@@ -9515,6 +9515,10 @@ body.tracking-active #nav-contact-section {
   padding-bottom: 10px;
 }
 
+#settings-panel.collapsed .settings-body {
+  display: none;
+}
+
 #settings-panel.collapsed .panel-header {
   margin-bottom: 2px;
 }
@@ -9526,7 +9530,7 @@ body.tracking-active #nav-contact-section {
 
 /* Collapsed width matches other panels */
 #settings-panel:not(.collapsed) {
-  width: 340px;
+  width: 380px;
 }
 
 #settings-panel:not(.collapsed) .settings-panel-inner {

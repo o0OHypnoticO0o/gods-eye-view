@@ -369,9 +369,11 @@ export class SettingsManager {
     if (!this.panelEl) return;
     const collapsed = this.panelEl.classList.toggle('collapsed');
     this.isOpen = !collapsed;
-    // Persist collapsed state using the app's existing localStorage pattern
+    // Update collapse button icon
+    const btn = this.panelEl.querySelector('.panel-collapse-btn');
+    if (btn) btn.textContent = collapsed ? '+' : '−';
+    // Persist collapsed state
     localStorage.setItem('godsEyeView.v1.panelCollapsed.settings-panel', collapsed ? '1' : '0');
-    // Store as active for stacking
     if (!collapsed) {
       this.panelEl.classList.add('active');
     }
