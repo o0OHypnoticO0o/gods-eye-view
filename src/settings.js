@@ -256,6 +256,9 @@ export class SettingsManager {
       const tierMeta = this.tiers[tier] || { label: tier.toUpperCase(), icon: 'settings', description: '' };
       const collapsed = this._collapsedTiers.has(tier);
       const activeCount = items.filter(i => i.hasValue).length;
+      const tierSetupLink = tierMeta.setupUrl ? `<a class="settings-tier-setup" href="${this._escapeAttr(tierMeta.setupUrl)}" target="_blank" rel="noopener" title="Setup guide for ${tierMeta.label}">
+        <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+      </a>` : '';
 
       html += `
         <div class="settings-tier" data-tier="${tier}">
@@ -263,9 +266,13 @@ export class SettingsManager {
             <span class="material-symbols-outlined settings-tier-icon" aria-hidden="true">${TIER_ICONS[tier] || 'settings'}</span>
             <span class="settings-tier-label">${tierMeta.label}</span>
             <span class="settings-tier-count">${activeCount}/${items.length}</span>
+            ${tierSetupLink}
             <span class="material-symbols-outlined settings-tier-chevron" aria-hidden="true">${collapsed ? 'expand_more' : 'expand_less'}</span>
           </div>
-          ${collapsed ? '' : `<div class="settings-tier-body">${items.map(i => this._renderField(i)).join('')}</div>`}
+          ${collapsed ? '' : `<div class="settings-tier-body">
+            <div class="settings-tier-desc">${tierMeta.description}</div>
+            ${items.map(i => this._renderField(i)).join('')}
+          </div>`}
         </div>
       `;
     }
@@ -275,7 +282,7 @@ export class SettingsManager {
 
   /**
    * Render a single setting field.
-   * @param {Object} field - { key, value, hasValue, label, required, cost, help, default }
+   * @param {Object} field - { key, value, hasValue, label, required, cost, help, default, setupUrl, quality }
    */
   _renderField(field) {
     const isPassword = PASSWORD_FIELDS.has(field.key);
@@ -285,6 +292,12 @@ export class SettingsManager {
     const placeholder = field.default || `Enter ${field.label.toLowerCase()}...`;
     const statusClass = field.hasValue ? 'configured' : (field.required ? 'required' : 'optional');
     const statusDot = field.hasValue ? '●' : (field.required ? '◆' : '○');
+
+    const qualityBadge = field.quality ? this._renderQualityBadge(field.quality) : '';
+    const setupLink = field.setupUrl ? `<a class="settings-field-setup" href="${this._escapeAttr(field.setupUrl)}" target="_blank" rel="noopener" title="Setup guide">
+      <span class="material-symbols-outlined" aria-hidden="true">menu_book</span>
+      <span>Setup Guide</span>
+    </a>` : '';
 
     return `
       <div class="settings-field ${statusClass}">
@@ -307,10 +320,29 @@ export class SettingsManager {
           ${isPassword ? `<button class="settings-reveal-btn" data-key="${field.key}" type="button" title="Toggle visibility" aria-label="Toggle visibility">
             <span class="material-symbols-outlined" aria-hidden="true">${revealed ? 'visibility_off' : 'visibility'}</span>
           </button>` : ''}
+          <button class="settings-test-btn" data-key="${field.key}" type="button" title="Test connection">Test</button>
         </div>
-        <div class="settings-field-help">${field.help}</div>
+        <div class="settings-field-footer">
+          <div class="settings-field-help">${field.help}</div>
+          <div class="settings-field-meta">
+            ${qualityBadge}
+            ${setupLink}
+          </div>
+        </div>
       </div>
     `;
+  }
+
+  /**
+   * Render a quality badge for self-hosted alternatives.
+   * @param {Object} quality - { score: 1-5, label: string, note: string }
+   */
+  _renderQualityBadge(quality) {
+    const stars = '★'.repeat(quality.score) + '☆'.repeat(5 - quality.score);
+    return `<span class="settings-quality-badge" title="${quality.note}">
+      <span class="settings-quality-stars">${stars}</span>
+      <span class="settings-quality-label">${quality.label}</span>
+    </span>`;
   }
 
   _renderError(message) {
@@ -347,6 +379,10 @@ export class SettingsManager {
   // Connection testing
   // ---------------------------------------------------------------------------
 
+  /**
+   * Test connection to a configured endpoint.
+   * @param {string} key - Setting key to test.
+   */
   async _testConnection(key) {
     const btn = this.panelEl?.querySelector(`.settings-test-btn[data-key="${key}"]`);
     if (btn) {
@@ -354,7 +390,6 @@ export class SettingsManager {
       btn.textContent = '...';
     }
 
-    // Simple heuristic: check if the key is non-empty
     const setting = this.settings[key];
     if (!setting || !setting.hasValue) {
       this._showToast(`${setting?.label || key}: No value configured`);
@@ -362,10 +397,65 @@ export class SettingsManager {
       return;
     }
 
-    // For now, just validate the format — full endpoint testing would require
-    // server-side ping routes which can be added incrementally
-    this._showToast(`${setting.label}: Value configured (${setting.value.substring(0, 8)}...)`);
+    // Build test URL based on setting type
+    const testUrl = this._buildTestUrl(key, setting);
+    if (!testUrl) {
+      this._showToast(`${setting.label}: Cannot test this setting`);
+      if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
+      return;
+    }
+
+    try {
+      const res = await fetch(SETTINGS_API, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, url: testUrl }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        this._showToast(`${setting.label}: ${data.message}`);
+      } else {
+        this._showToast(`${setting.label}: ${data.message}`);
+      }
+    } catch (err) {
+      this._showToast(`${setting.label}: Test failed — ${err.message}`);
+    }
+
     if (btn) { btn.disabled = false; btn.textContent = 'Test'; }
+  }
+
+  /**
+   * Build a test URL for a given setting key.
+   * @param {string} key
+   * @param {Object} setting
+   * @returns {string|null}
+   */
+  _buildTestUrl(key, setting) {
+    const val = setting.value;
+    // Endpoint URLs — test the root
+    const urlTests = {
+      nominatimUrl:    `${val}/search?q=test&format=json&limit=1`,
+      overpassUrl:     `${val}/interpreter?data=[out:json];node(0,0,0,0);out+1;`,
+      osrmUrl:         `${val}/route/v1/driving/-97.7431,30.2672;-97.7341,30.2702`,
+      osmTilesUrl:     `${val}/1/1/1.png`,
+      openMeteoUrl:    `${val}/v1/forecast?latitude=30.2672&longitude=-97.7431&current_weather=true`,
+      whisperUrl:      `${val}/health`,
+      lmStudioUrl:     `${val}/models`,
+      localVoiceWsUrl: null, // WebSocket — can't test with fetch
+    };
+    if (urlTests[key] !== undefined) return urlTests[key];
+
+    // API key tests — ping a lightweight endpoint
+    const keyTests = {
+      googleMapsApiKey: `https://maps.googleapis.com/maps/api/geocode/json?address=test&key=${val}`,
+      cesiumIonToken:   `https://api.cesium.com/v1/me`,
+      aisstreamApiKey:  null, // WebSocket only
+      firmsMapKey:      `https://firms.modaps.eosdis.nasa.gov/api/area/csv/${val}/VIIRS_SNPP_NRT/world/1/2026-01-01`,
+      tomtomApiKey:     `https://api.tomtom.com/map/1/staticimage?layer=basic&style=main&zoom=1&center=0,0&width=1&height=1&key=${val}`,
+    };
+    if (keyTests[key] !== undefined) return keyTests[key];
+
+    return null;
   }
 
   // ---------------------------------------------------------------------------

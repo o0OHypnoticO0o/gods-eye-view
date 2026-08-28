@@ -9818,6 +9818,94 @@ body.tracking-active #nav-contact-section {
   cursor: not-allowed;
 }
 
+/* Field footer (help + meta row) */
+.settings-field-footer {
+  margin-top: 4px;
+}
+
+.settings-field-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 4px;
+  flex-wrap: wrap;
+}
+
+/* Quality badge */
+.settings-quality-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  cursor: help;
+}
+
+.settings-quality-stars {
+  color: #f0ad4e;
+  letter-spacing: 1px;
+}
+
+.settings-quality-label {
+  color: var(--text-dim);
+}
+
+/* Setup guide link */
+.settings-field-setup {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: var(--accent);
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+}
+
+.settings-field-setup:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.settings-field-setup .material-symbols-outlined {
+  font-size: 13px;
+}
+
+/* Tier description */
+.settings-tier-desc {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  color: var(--text-dim);
+  padding: 0 6px 6px;
+  line-height: 1.5;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  margin-bottom: 4px;
+}
+
+/* Tier header setup link */
+.settings-tier-setup {
+  display: inline-flex;
+  align-items: center;
+  color: var(--accent);
+  opacity: 0.5;
+  text-decoration: none;
+  transition: opacity var(--transition-fast);
+  margin-left: auto;
+  margin-right: 2px;
+}
+
+.settings-tier-setup:hover {
+  opacity: 1;
+}
+
+.settings-tier-setup .material-symbols-outlined {
+  font-size: 14px;
+}
+
 /* ── Recording mode: hide settings panel ── */
 body.recording-mode #settings-panel,
 body.recording-mode #settings-btn {

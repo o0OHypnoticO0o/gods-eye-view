@@ -10,7 +10,7 @@ Everything you need to run God's Eye View with full functionality. Services are 
 
 | Tier | Service | Purpose | Cost | Local Alternative |
 |------|---------|---------|------|-------------------|
-| **0 — Core** | Google Maps | Map tiles, geocoding, places | 🔴 ($200/mo free credit) | ❌ Required |
+| **0 — Core** | Google Maps | Map tiles, geocoding, places | 🔴 ($200/mo free credit) | ❌ Required (tiles) |
 | | Cesium Ion | 3D terrain, Bing imagery | 🟡 (free key) | Re:Earth fallback (keyless) |
 | **1 — Inference** | OpenAI API | Voice control, HUD summary | 🔴 (metered) | LM Studio + Whisper + Piper |
 | | LM Studio | Local LLM inference | ⚫ | Replaces OpenAI for HUD + voice |
@@ -20,15 +20,19 @@ Everything you need to run God's Eye View with full functionality. Services are 
 | | adsb.lol | Military aircraft | 🟢 | ❌ Only provider |
 | | CelesTrak | Satellite TLE data | 🟢 | ❌ Only provider |
 | | USGS | Earthquake data | 🟢 | ❌ Only provider |
-| | Open-Meteo | Weather data | 🟢 | ❌ Only provider |
+| | Open-Meteo | Weather data | 🟢 | ⚫ Self-hosted ★★★★★ |
 | | Radio Browser | Internet radio | 🟢 | ❌ Only provider |
 | | GBFS | Bike-share stations | 🟢 | ❌ Only provider |
-| | Overpass/OSM | Road geometry, POI | 🟢 | Self-hosted Overpass |
+| | Overpass/OSM | Road geometry, POI | 🟢 | ⚫ Self-hosted ★★★★☆ |
 | | adsbdb | Aircraft enrichment | 🟢 | ❌ Only provider |
 | **3 — Data (key)** | AISStream | Live vessel tracking | 🟡 (free tier) | ❌ Only provider |
 | | NASA FIRMS | Active fire detections | 🟡 (free key) | ❌ Only provider |
 | | TomTom | Live traffic flow | 🟡 (freemium) | Keyless = simulated traffic |
-| **4 — Self-hosted** | Nominatim | Geocoding (search/reverse) | ⚫ Local or 🟢 public | Self-hosted Docker or public API |
+| **4 — Self-hosted** | Nominatim | Geocoding (search/reverse) | ⚫ Local or 🟢 public | ⚫ Self-hosted ★★★★★ |
+| | Overpass API | OSM queries | ⚫ Local or 🟢 public | ⚫ Self-hosted ★★★★☆ |
+| | OSRM | Route calculation | ⚫ Local or 🟢 public | ⚫ Self-hosted ★★★★☆ |
+| | OSM Tiles | Map tile layer | ⚫ Local or 🟢 public | ⚫ Self-hosted ★★★☆☆ |
+| | Open-Meteo | Weather data | ⚫ Local or 🟢 public | ⚫ Self-hosted ★★★★★ |
 
 ---
 
@@ -272,9 +276,21 @@ These services are all free and require no registration. They work out of the bo
 
 ## Tier 4: Self-Hosted Services
 
-### Nominatim Geocoder — ⚫ Local or 🟢 Public
+These services can be replaced with self-hosted alternatives. Each has a quality rating comparing it to the cloud version. Configure endpoints in the **Settings panel** (gear icon ⚙️) or in `.env`.
 
-**What it powers:** Place search (forward geocoding), reverse geocoding for voice context and cockpit briefings. Replaces the Google Geocoding API for these tasks.
+**Quality rating legend:**
+- ★★★★★ Excellent — near-identical to cloud
+- ★★★★☆ Very Good — minor feature differences
+- ★★★☆☆ Good — functional but reduced features
+- ★★☆☆☆ Fair — works but significant tradeoffs
+
+---
+
+### Nominatim Geocoder — ★★★★★ Excellent
+
+**Replaces:** Google Geocoding API
+**What it powers:** Place search (forward geocoding), reverse geocoding for voice context and cockpit briefings.
+**Quality note:** Full geocoding with OpenStreetMap data. Near-identical to Google for most use cases. No structured name extraction (returns raw OSM labels instead of Google's formatted address components).
 
 **How it works:** All geocoding requests route through a server-side `/api/nominatim` proxy. The proxy reads the `NOMINATIM_URL` setting to determine which Nominatim instance to use.
 
@@ -283,8 +299,8 @@ These services are all free and require no registration. They work out of the bo
 | Option | Setup | Rate Limit | Data Coverage |
 |--------|-------|------------|---------------|
 | **Public Nominatim** | No setup needed (default) | 1 req/s, no key | Global (OpenStreetMap) |
-| **Self-hosted (US)** | Docker, ~10 min import | Unlimited | US only |
-| **Self-hosted (global)** | Docker, ~2-4 hr import | Unlimited | Global |
+| **Self-hosted (region)** | Docker, minutes to import | Unlimited | Regional extract |
+| **Self-hosted (global)** | Docker, 2-4 hr import | Unlimited | Full planet |
 
 #### Option A: Public Nominatim (zero setup)
 
@@ -292,58 +308,239 @@ No configuration needed. The app uses `https://nominatim.openstreetmap.org` by d
 
 #### Option B: Self-Hosted Nominatim (recommended)
 
-The included Docker Compose setup imports the US extract from Geofabrik. First-time import takes 5-10 minutes.
-
 ```bash
-cd /path/to/nominatim   # or create ~/nominatim/
-docker compose up -d     # starts import (check: docker compose logs -f)
-# Wait for "Listening on 0.0.0.0:8080" in logs
+cd ~/nominatim  # or any directory
 ```
 
-**Available extracts** (edit `docker-compose.yml` to change):
+Create `docker-compose.yml`:
 
-| Region | PBF URL | Raw Size | Import Time |
-|--------|---------|----------|-------------|
-| US | `north-america/us-latest.osm.pbf` | ~12 GB | ~10 min |
-| Texas | `north-america/us/texas-latest.osm.pbf` | ~600 MB | ~1 min |
-| UK | `europe/great-britain-latest.osm.pbf` | ~800 MB | ~1 min |
-| Full planet | `planet-latest.osm.pbf` | ~80 GB | ~2-4 hr |
+```yaml
+services:
+  nominatim:
+    image: mediagis/nominatim:4.4
+    container_name: nominatim
+    restart: unless-stopped
+    ports:
+      - "8900:8080"
+    environment:
+      # Change PBF_URL for your region (see table below)
+      PBF_URL: https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
+      IMPORT_LANGS: en
+      FLATNODES: "true"
+      NUM_THREADS: 4
+      POSTGRES_SHARED_BUFFERS: "2GB"
+      POSTGRES_MAINTENANCE_WORK_MEM: "1GB"
+      POSTGRES_WORK_MEM: "50MB"
+    volumes:
+      - nominatim-data:/var/lib/postgresql
+    shm_size: "2gb"
+    deploy:
+      resources:
+        limits:
+          memory: 10G
 
-**After import completes**, configure in the Settings panel:
+volumes:
+  nominatim-data:
+```
 
-- Nominatim Geocoder URL: `http://localhost:8900` (Docker maps to port 8900)
+```bash
+docker compose up -d          # first run imports data
+docker compose logs -f        # watch progress
+# Wait for "Nominatim is ready to accept requests"
+```
 
-Or set in `.env`:
+**Available extracts** (edit `PBF_URL` in docker-compose.yml):
+
+| Region | PBF URL | Raw Size | Import Time | Disk (indexed) | RAM |
+|--------|---------|----------|-------------|----------------|-----|
+| Texas | `north-america/us/texas-latest.osm.pbf` | ~700 MB | ~5 min | ~2 GB | ~2 GB |
+| UK | `europe/great-britain-latest.osm.pbf` | ~800 MB | ~5 min | ~2 GB | ~2 GB |
+| US | `north-america/us-latest.osm.pbf` | ~12 GB | ~50 min | ~30 GB | ~4 GB |
+| Germany | `europe/germany-latest.osm.pbf` | ~1 GB | ~8 min | ~3 GB | ~2 GB |
+| Full planet | `planet-latest.osm.pbf` | ~80 GB | ~4 hr | ~200 GB | ~8 GB |
+
+**To switch regions:**
+```bash
+docker compose down -v   # delete old data
+# Edit docker-compose.yml PBF_URL
+docker compose up -d     # re-import
+```
+
+**After import**, configure in Settings panel:
+- **Nominatim Geocoder URL**: `http://localhost:8900`
+
+Or in `.env`:
 ```
 NOMINATIM_URL=http://localhost:8900
 ```
 
-**Resource requirements:**
-- Disk: ~30 GB for US extract (indexed database)
-- RAM: ~8 GB during import, ~2 GB steady-state
-- CPU: 4+ threads recommended for import
-
-**Stopping/starting:**
+**Verify:** Click the **Test** button next to the Nominatim URL field in Settings, or:
 ```bash
-docker compose stop     # stop (data persists in volume)
-docker compose start    # restart (instant, no re-import)
-docker compose down     # stop and remove container (data persists in volume)
-docker compose down -v  # stop and DELETE all data
+curl "http://localhost:8900/search?q=Austin+Texas&format=json&limit=1"
 ```
 
-### What replaces Google Geocoding?
+---
 
-With Nominatim configured, the following call sites use Nominatim instead of (or as fallback to) Google:
+### Overpass API — ★★★★☆ Very Good
 
-| Call Site | Without Nominatim URL | With Nominatim URL |
-|-----------|----------------------|-------------------|
-| Location search bar | Google → Nominatim fallback | Google → Nominatim fallback |
-| Voice `fly_to_location` | Google → Nominatim fallback | Google → Nominatim fallback |
-| Voice radio location | Google only (no fallback) | Google → Nominatim fallback |
-| Voice reverse geocode | Google only (no fallback) | Google → Nominatim fallback |
-| Annotation resolver | Google only (no fallback) | Google → Nominatim fallback |
+**Replaces:** Public overpass-api.de
+**What it powers:** OSM queries for road geometry, POI discovery, place enrichment in annotations.
+**Quality note:** Full OSM query support. Self-hosted instance has no rate limits and faster response times.
 
-**Note:** Google Maps API key is still required for map tiles and imagery — the geocoding fallback only affects place-name-to-coordinates resolution.
+**Docker setup:**
+```bash
+docker run -d --name overpass \
+  -p 12345:80 \
+  -e OVERPASS_META=yes \
+  -e OVERPASS时代中国限购areas=yes \
+  -e OVERPASS_FLUSH=true \
+  -e OVERPASS_MODE=init \
+  -e OVERPASS_PLANET=/nominatim/data.osm.pbf \
+  -v /path/to/data.osm.pbf:/nominatim/data.osm.pbf \
+  -v overpass-db:/var/lib/overpass \
+  wiktorn/overpass-api
+```
+
+**Or use the quick-start script:**
+```bash
+# Download the planet extract first
+wget https://download.geofabrik.de/planet-latest.osm.pbf
+
+docker run -d --name overpass \
+  -p 12345:80 \
+  -v $(pwd)/planet-latest.osm.pbf:/nominatim/data.osm.pbf \
+  -v overpass-db:/var/lib/overpass \
+  -e OVERPASS_MODE=init \
+  -e OVERPASS_PLANET=/nominatim/data.osm.pbf \
+  wiktorn/overpass-api
+```
+
+**Regional extracts** (smaller = faster import):
+- Texas: ~700 MB → import in minutes
+- US: ~12 GB → import in ~30 min
+- Planet: ~80 GB → import in hours
+
+**Configure in Settings:**
+- **Overpass API URL**: `http://localhost:12345`
+
+**Verify:**
+```bash
+curl "http://localhost:12345/interpreter?data=[out:json];node(30.26,-97.75,30.28,-97.73);out+5;"
+```
+
+---
+
+### OSRM Routing — ★★★★☆ Very Good
+
+**Replaces:** Public routing.openstreetmap.de
+**What it powers:** Route calculations for annotations and navigation features.
+**Quality note:** Fast car/bicycle/pedestrian routing. No traffic-aware routing (use TomTom for that).
+
+**Docker setup:**
+```bash
+# Download a regional extract
+wget https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf
+
+# Extract and prepare
+docker run -t -v "$(pwd):/data" ghcr.io/project-osrm/osrm-backend osrm-extract \
+  -p /opt/car.lua /data/texas-latest.osm.pbf
+
+docker run -t -v "$(pwd):/data" ghcr.io/project-osrm/osrm-backend osrm-partition \
+  /data/texas-latest.osrm
+
+docker run -t -v "$(pwd):/data" ghcr.io/project-osrm/osrm-backend osrm-customize \
+  /data/texas-latest.osrm
+
+# Run the server
+docker run -d --name osrm \
+  -p 5000:5000 \
+  -v "$(pwd):/data" \
+  ghcr.io/project-osrm/osrm-backend osrm-routed \
+  --algorithm mld /data/texas-latest.osrm
+```
+
+**Configure in Settings:**
+- **OSRM Routing URL**: `http://localhost:5000`
+
+**Verify:**
+```bash
+curl "http://localhost:5000/route/v1/driving/-97.7431,30.2672;-97.7341,30.2702?overview=false"
+```
+
+---
+
+### OSM Tile Server — ★★★☆☆ Good
+
+**Replaces:** Public tile.openstreetmap.org
+**What it powers:** Basic map tile layer (fallback when Google tiles unavailable).
+**Quality note:** Standard OSM mapnik rendering. No 3D, no photorealistic. Functional but visually basic compared to Google.
+
+**Docker setup:**
+```bash
+docker run -d --name osm-tiles \
+  -p 8080:80 \
+  -v osm-data:/var/lib/postgresql \
+  -e DOWNLOAD_PBF=https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf \
+  -e DOWNLOAD_POLY=https://download.geofabrik.de/north-america/us/texas-latest.osm.pbf.poly \
+  overv/openstreetmap-tile-server
+```
+
+**Configure in Settings:**
+- **OSM Tile Server URL**: `http://localhost:8080`
+
+**Note:** Without this setting, the app uses public `tile.openstreetmap.org` tiles directly. Self-hosting is mainly useful for high-volume usage or air-gapped deployments.
+
+---
+
+### Open-Meteo Weather — ★★★★★ Excellent
+
+**Replaces:** Public api.open-meteo.com
+**What it powers:** Weather data for entity enrichment and regional briefings.
+**Quality note:** Open-source weather API. Near-identical to the cloud version. Uses the same underlying weather models (ECMWF, GFS, DWDICON, etc.).
+
+**Docker setup:**
+```bash
+# Open-Meteo provides an official Docker image
+docker run -d --name open-meteo \
+  -p 8090:8080 \
+  ghcr.io/open-meteo/open-meteo
+```
+
+**For the full weather API with historical data:**
+```bash
+git clone https://github.com/open-meteo/open-meteo.git
+cd open-meteo
+docker compose up -d
+```
+
+**Configure in Settings:**
+- **Open-Meteo Weather URL**: `http://localhost:8090`
+
+**Verify:**
+```bash
+curl "http://localhost:8090/v1/forecast?latitude=30.2672&longitude=-97.7431&current_weather=true"
+```
+
+---
+
+### Cloud API Quick Setup
+
+For services you prefer to use from the cloud, here are direct signup links:
+
+| Service | Purpose | Free Tier | Signup Link |
+|---------|---------|-----------|-------------|
+| Google Maps | Map tiles, geocoding, places | $200/mo credit | [console.cloud.google.com](https://console.cloud.google.com/) |
+| Cesium Ion | 3D terrain, Bing imagery | 100k tiles/mo | [ion.cesium.com](https://ion.cesium.com/) |
+| OpenAI | Voice control, HUD summary | Pay-per-use | [platform.openai.com](https://platform.openai.com/api-keys) |
+| OpenSky Network | Civilian flight tracking | Anonymous (rate-limited) | [opensky-network.org](https://opensky-network.org/api) |
+| adsb.lol | Military aircraft tracking | Free (community) | [adsb.lol](https://adsb.lol/) |
+| AISStream | Live vessel tracking | 100 free messages | [aisstream.io](https://aisstream.io/register) |
+| NASA FIRMS | Active fire detections | Free key | [firms.modaps.eosdis.nasa.gov](https://firms.modaps.eosdis.nasa.gov/api/map_key) |
+| TomTom | Live traffic flow | 50k tiles/day | [developer.tomtom.com](https://developer.tomtom.com/) |
+| CelesTrak | Satellite TLE data | Free (public) | [celestrak.org](https://celestrak.org/) |
+| adsbdb | Aircraft enrichment | Free (community) | [adsbdb.com](https://adsbdb.com/) |
+
+---
 
 ---
 

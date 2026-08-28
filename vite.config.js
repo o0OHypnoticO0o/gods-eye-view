@@ -7391,37 +7391,41 @@ const SENSITIVE_KEYS = new Set([
 /** Schema: each key maps to its .env fallback and whether it's client-exposed. */
 const SETTINGS_SCHEMA = {
   // Tier 0 — Core (required)
-  googleMapsApiKey:      { env: 'GOOGLE_MAPS_API_KEY', clientExposed: true,  tier: 'core', label: 'Google Maps API Key', required: true,  cost: '🔴 Paid ($200/mo free credit)', help: 'Enable Maps JavaScript API + Static Maps API at console.cloud.google.com' },
-  cesiumIonToken:        { env: 'CESIUM_ION_TOKEN',    clientExposed: true,  tier: 'core', label: 'Cesium Ion Token', required: false, cost: '🟡 Free key', help: 'Enables Bing imagery + Cesium World Terrain. Register at cesium.com/ion' },
+  googleMapsApiKey:      { env: 'GOOGLE_MAPS_API_KEY', clientExposed: true,  tier: 'core', label: 'Google Maps API Key', required: true,  cost: '🔴 Paid ($200/mo free credit)', help: 'Enable Maps JavaScript API + Static Maps API at console.cloud.google.com', setupUrl: 'https://developers.google.com/maps/documentation/javascript/get-api-key' },
+  cesiumIonToken:        { env: 'CESIUM_ION_TOKEN',    clientExposed: true,  tier: 'core', label: 'Cesium Ion Token', required: false, cost: '🟡 Free key', help: 'Enables Bing imagery + Cesium World Terrain. Register at cesium.com/ion', setupUrl: 'https://ion.cesium.com/tokens' },
   // Tier 1 — Inference & Voice
-  openaiApiKey:          { env: 'OPENAI_API_KEY',       clientExposed: false, tier: 'inference', label: 'OpenAI API Key', required: false, cost: '🔴 Paid (metered)', help: 'Required for OpenAI Realtime voice. Skip if using local voice pipeline.' },
+  openaiApiKey:          { env: 'OPENAI_API_KEY',       clientExposed: false, tier: 'inference', label: 'OpenAI API Key', required: false, cost: '🔴 Paid (metered)', help: 'Required for OpenAI Realtime voice. Skip if using local voice pipeline.', setupUrl: 'https://platform.openai.com/api-keys' },
   openaiBaseUrl:         { env: 'OPENAI_BASE_URL',      clientExposed: false, tier: 'inference', label: 'OpenAI Base URL', required: false, cost: '⚫ Local', help: 'Override for HUD summary. Default: https://api.openai.com. Set to LM Studio URL for local.', default: 'https://api.openai.com' },
   openaiHudModel:        { env: 'OPENAI_HUD_SUMMARY_MODEL', clientExposed: false, tier: 'inference', label: 'HUD Summary Model', required: false, cost: '—', help: 'Model for HUD text summaries. Default: gpt-5-nano.', default: 'gpt-5-nano' },
   openaiHudReasoning:    { env: 'OPENAI_HUD_SUMMARY_REASONING', clientExposed: false, tier: 'inference', label: 'HUD Reasoning Effort', required: false, cost: '—', help: 'Reasoning mode for HUD summary. Use "none" for LM Studio.', default: 'minimal' },
   localVoiceWsUrl:       { env: 'LOCAL_VOICE_WS_URL',  clientExposed: true,  tier: 'inference', label: 'Local Voice WebSocket', required: false, cost: '⚫ Local', help: 'ws://host:port for local voice server. When set, bypasses OpenAI voice entirely.' },
   // Tier 1b — Local voice pipeline endpoints
-  whisperUrl:            { env: 'WHISPER_URL',          clientExposed: false, tier: 'voice', label: 'Whisper STT URL', required: false, cost: '⚫ Local', help: 'http://host:port for Whisper.cpp server. Default: http://localhost:8080', default: 'http://localhost:8080' },
-  lmStudioUrl:           { env: 'LM_STUDIO_URL',       clientExposed: false, tier: 'voice', label: 'LM Studio URL', required: false, cost: '⚫ Local', help: 'http://host:port/v1 for LM Studio. Default: http://localhost:1234/v1', default: 'http://localhost:1234/v1' },
+  whisperUrl:            { env: 'WHISPER_URL',          clientExposed: false, tier: 'voice', label: 'Whisper STT URL', required: false, cost: '⚫ Local', help: 'http://host:port for Whisper.cpp server. Default: http://localhost:8080', default: 'http://localhost:8080', quality: { score: 5, label: 'Excellent', note: 'Whisper.cpp is near-identical to OpenAI Whisper API' } },
+  lmStudioUrl:           { env: 'LM_STUDIO_URL',       clientExposed: false, tier: 'voice', label: 'LM Studio URL', required: false, cost: '⚫ Local', help: 'http://host:port/v1 for LM Studio. Default: http://localhost:1234/v1', default: 'http://localhost:1234/v1', quality: { score: 4, label: 'Very Good', note: 'Quality depends on model size. Qwen 3.5B+ recommended.' } },
   llmModel:              { env: 'LLM_MODEL',            clientExposed: false, tier: 'voice', label: 'LLM Model', required: false, cost: '—', help: 'Model name for local inference. Default: qwen3.6-35b-a3b-mtp', default: 'qwen3.6-35b-a3b-mtp' },
-  piperVoice:            { env: 'VOICE_MODEL',          clientExposed: false, tier: 'voice', label: 'Piper Voice Model', required: false, cost: '—', help: 'Voice model for TTS. Default: en_US-amy-medium', default: 'en_US-amy-medium' },
+  piperVoice:            { env: 'VOICE_MODEL',          clientExposed: false, tier: 'voice', label: 'Piper Voice Model', required: false, cost: '—', help: 'Voice model for TTS. Default: en_US-amy-medium', default: 'en_US-amy-medium', quality: { score: 4, label: 'Very Good', note: 'Fast, lightweight TTS. Multiple voices available.' } },
   // Tier 2 — Data layer keys (free keys or paid)
-  aisstreamApiKey:       { env: 'AISSTREAM_API_KEY',    clientExposed: false, tier: 'layers', label: 'AISStream API Key', required: false, cost: '🟢 Free tier available', help: 'Live AIS vessel positions. Free tier at aisstream.io' },
-  firmsMapKey:           { env: 'FIRMS_MAP_KEY',        clientExposed: false, tier: 'layers', label: 'NASA FIRMS Key', required: false, cost: '🟢 Free key', help: 'Active fire detections. Get key at firms.modaps.eosdis.nasa.gov/api/map_key' },
-  tomtomApiKey:          { env: 'TOMTOM_API_KEY',       clientExposed: false, tier: 'layers', label: 'TomTom Traffic Key', required: false, cost: '🟡 Freemium (50k tiles/day)', help: 'Live traffic flow tiles. Free tier at developer.tomtom.com. Keyless = simulated traffic.' },
-  openskyAuthMode:       { env: 'OPENSKY_AUTH_MODE',    clientExposed: false, tier: 'layers', label: 'OpenSky Auth Mode', required: false, cost: '🟢 Free (anon) or 🟡 Free key (auth)', help: 'oauth|basic|auto|anon. Anon works but is rate-limited.', default: 'anon' },
+  aisstreamApiKey:       { env: 'AISSTREAM_API_KEY',    clientExposed: false, tier: 'layers', label: 'AISStream API Key', required: false, cost: '🟢 Free tier available', help: 'Live AIS vessel positions. Free tier at aisstream.io', setupUrl: 'https://aisstream.io/register' },
+  firmsMapKey:           { env: 'FIRMS_MAP_KEY',        clientExposed: false, tier: 'layers', label: 'NASA FIRMS Key', required: false, cost: '🟢 Free key', help: 'Active fire detections. Get key at firms.modaps.eosdis.nasa.gov/api/map_key', setupUrl: 'https://firms.modaps.eosdis.nasa.gov/api/map_key' },
+  tomtomApiKey:          { env: 'TOMTOM_API_KEY',       clientExposed: false, tier: 'layers', label: 'TomTom Traffic Key', required: false, cost: '🟡 Freemium (50k tiles/day)', help: 'Live traffic flow tiles. Free tier at developer.tomtom.com. Keyless = simulated traffic.', setupUrl: 'https://developer.tomtom.com/' },
+  openskyAuthMode:       { env: 'OPENSKY_AUTH_MODE',    clientExposed: false, tier: 'layers', label: 'OpenSky Auth Mode', required: false, cost: '🟢 Free (anon) or 🟡 Free key (auth)', help: 'oauth|basic|auto|anon. Anon works but is rate-limited.', default: 'anon', setupUrl: 'https://opensky-network.org/api' },
   openskyClientId:       { env: 'OPENSKY_CLIENT_ID',    clientExposed: false, tier: 'layers', label: 'OpenSky Client ID', required: false, cost: '🟡 Free key', help: 'OAuth credential from opensky-network.org. Only needed for oauth mode.' },
   openskyClientSecret:   { env: 'OPENSKY_CLIENT_SECRET', clientExposed: false, tier: 'layers', label: 'OpenSky Client Secret', required: false, cost: '🟡 Free key', help: 'OAuth credential from opensky-network.org. Only needed for oauth mode.' },
   // Tier 4 — Self-hosted services
-  nominatimUrl:          { env: 'NOMINATIM_URL',         clientExposed: false, tier: 'local', label: 'Nominatim Geocoder URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Nominatim for geocoding. Set to your Docker instance URL or leave empty to use public nominatim.openstreetmap.org.', default: '' },
+  nominatimUrl:          { env: 'NOMINATIM_URL',         clientExposed: false, tier: 'local', label: 'Nominatim Geocoder URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Nominatim for geocoding. Set to your Docker instance URL or leave empty to use public nominatim.openstreetmap.org.', default: '', quality: { score: 5, label: 'Excellent', note: 'Full geocoding with OpenStreetMap data. ~700MB RAM for Texas extract.' }, setupUrl: 'https://github.com/mediagis/nominatim-docker' },
+  overpassUrl:           { env: 'OVERPASS_URL',          clientExposed: false, tier: 'local', label: 'Overpass API URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Overpass API for OSM queries. Leave empty to use public overpass-api.de.', default: '', quality: { score: 4, label: 'Very Good', note: 'Full OSM query support. ~2GB RAM for planet extract.' }, setupUrl: 'https://github.com/drolbr/Overpass-API' },
+  osrmUrl:               { env: 'OSRM_URL',             clientExposed: false, tier: 'local', label: 'OSRM Routing URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted OSRM for routing. Leave empty to use public routing.openstreetmap.de.', default: '', quality: { score: 4, label: 'Very Good', note: 'Fast routing engine. Texas extract ~500MB RAM.' }, setupUrl: 'https://project-osrm.org/docs/v5.27.1/' },
+  osmTilesUrl:           { env: 'OSM_TILES_URL',        clientExposed: false, tier: 'local', label: 'OSM Tile Server URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted OSM tile server. Leave empty to use public tile.openstreetmap.org.', default: '', quality: { score: 3, label: 'Good', note: 'Basic map tiles. No 3D or photorealistic. ~10GB disk for planet.' }, setupUrl: 'https://github.com/Overv/openstreetmap-tile-server' },
+  openMeteoUrl:          { env: 'OPEN_METEO_URL',       clientExposed: false, tier: 'local', label: 'Open-Meteo Weather URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Open-Meteo for weather data. Leave empty to use public api.open-meteo.com.', default: '', quality: { score: 5, label: 'Excellent', note: 'Open-source weather API. Near-identical to cloud version.' }, setupUrl: 'https://open-meteo.com/en/docs' },
 };
 
 /** Tier display metadata. */
 const TIER_META = {
-  core:      { label: 'CORE SERVICES',  icon: '🌐', description: 'Required for the app to function' },
-  inference: { label: 'INFERENCE & VOICE', icon: '🧠', description: 'Choose cloud (OpenAI) or local (LM Studio + Whisper + Piper)' },
-  voice:     { label: 'LOCAL VOICE PIPELINE', icon: '🎙️', description: 'Endpoints for local voice server components' },
-  layers:    { label: 'DATA LAYERS', icon: '📡', description: 'Optional API keys for additional live data feeds' },
-  local:     { label: 'SELF-HOSTED SERVICES', icon: '🏠', description: 'Self-hosted alternatives to cloud APIs' },
+  core:      { label: 'CORE SERVICES',  icon: '🌐', description: 'Required for the app to function', setupUrl: 'SETUP.md#core-services' },
+  inference: { label: 'INFERENCE & VOICE', icon: '🧠', description: 'Choose cloud (OpenAI) or local (LM Studio + Whisper + Piper)', setupUrl: 'SETUP.md#inference--voice' },
+  voice:     { label: 'LOCAL VOICE PIPELINE', icon: '🎙️', description: 'Endpoints for local voice server components', setupUrl: 'SETUP.md#local-voice-pipeline' },
+  layers:    { label: 'DATA LAYERS', icon: '📡', description: 'Optional API keys for additional live data feeds', setupUrl: 'SETUP.md#data-layers' },
+  local:     { label: 'SELF-HOSTED SERVICES', icon: '🏠', description: 'Self-hosted alternatives to cloud APIs — configure endpoints below', setupUrl: 'SETUP.md#self-hosted-services' },
 };
 
 /**
@@ -7470,6 +7474,8 @@ function buildMergedSettings(persisted) {
       clientExposed: schema.clientExposed,
       envKey: schema.env,
       default: schema.default || '',
+      setupUrl: schema.setupUrl || '',
+      quality: schema.quality || null,
     };
   }
   return merged;
@@ -7532,6 +7538,8 @@ function settingsPlugin() {
             clientExposed: entry.clientExposed,
             envKey: entry.envKey,
             default: entry.default,
+            setupUrl: entry.setupUrl || '',
+            quality: entry.quality || null,
           };
         }
         settingsJson(res, 200, {
@@ -7579,6 +7587,8 @@ function settingsPlugin() {
               clientExposed: entry.clientExposed,
               envKey: entry.envKey,
               default: entry.default,
+              setupUrl: entry.setupUrl || '',
+              quality: entry.quality || null,
             };
           }
           settingsJson(res, 200, { ok: true, settings: clientSafe });
@@ -7588,7 +7598,45 @@ function settingsPlugin() {
         return;
       }
 
-      settingsJson(res, 405, { error: 'Method not allowed. Use GET or PUT.' });
+      if (req.method === 'POST') {
+        // Test connection to a configured endpoint
+        try {
+          const body = await readBody(req);
+          const { key, url } = JSON.parse(body);
+          if (!key || !url) {
+            settingsJson(res, 400, { error: 'Missing key or url' });
+            return;
+          }
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 5000);
+          try {
+            const testRes = await fetch(url, {
+              method: 'GET',
+              signal: controller.signal,
+              headers: { 'User-Agent': 'GodsEyeView/1.0 (connection-test)' },
+            });
+            clearTimeout(timeout);
+            settingsJson(res, 200, {
+              ok: testRes.ok,
+              status: testRes.status,
+              statusText: testRes.statusText,
+              message: testRes.ok ? `Connected (${testRes.status})` : `HTTP ${testRes.status}: ${testRes.statusText}`,
+            });
+          } catch (fetchErr) {
+            clearTimeout(timeout);
+            settingsJson(res, 200, {
+              ok: false,
+              status: 0,
+              message: fetchErr.name === 'AbortError' ? 'Connection timed out (5s)' : `Connection failed: ${fetchErr.message}`,
+            });
+          }
+        } catch (err) {
+          settingsJson(res, 400, { error: `Invalid JSON: ${err.message}` });
+        }
+        return;
+      }
+
+      settingsJson(res, 405, { error: 'Method not allowed. Use GET, PUT, or POST.' });
     });
   };
 
