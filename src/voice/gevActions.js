@@ -1,5 +1,6 @@
 import * as Cesium from 'cesium';
 import { CITY_POIS, findPoiByName, flyToGlobeView, flyToLandmark, flyToPOI, flyToPresetLocation, GLOBE_VIEW, searchAndFlyTo } from '../locations.js';
+import { nominatimForward, nominatimReverse } from '../geocoding.js';
 import {
   getContextStore,
   getSelectedEntityContext,
@@ -1294,29 +1295,41 @@ async function resolveRadioLocation(args = {}, coordinates = radioCoordinatePair
   if (known) return known;
   if (!query) return null;
   const apiKey = window.__GOOGLE_MAPS_API_KEY__ || import.meta.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) throw new Error('No Google Maps API key available for Radio location search');
-  const controller = new AbortController();
-  const cancelFromTurn = () => controller.abort();
-  if (options.signal?.aborted) throw radioAbortError();
-  options.signal?.addEventListener('abort', cancelFromTurn, { once: true });
-  const timer = setTimeout(() => controller.abort(), 6000);
-  try {
-    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
-    const response = await fetch(url, { signal: controller.signal });
-    const body = await response.json();
-    if (!radioActionIsCurrent(options)) throw radioAbortError();
-    const result = body.status === 'OK' ? body.results?.[0] : null;
-    if (!result?.geometry?.location) return null;
-    return {
-      lat: result.geometry.location.lat,
-      lon: result.geometry.location.lng,
-      label: result.formatted_address || query,
-      country: '',
-    };
-  } finally {
-    clearTimeout(timer);
-    options.signal?.removeEventListener('abort', cancelFromTurn);
+
+  // Try Google Geocoding if API key is available
+  if (apiKey) {
+    const controller = new AbortController();
+    const cancelFromTurn = () => controller.abort();
+    if (options.signal?.aborted) throw radioAbortError();
+    options.signal?.addEventListener('abort', cancelFromTurn, { once: true });
+    const timer = setTimeout(() => controller.abort(), 6000);
+    try {
+      const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+      const response = await fetch(url, { signal: controller.signal });
+      const body = await response.json();
+      if (!radioActionIsCurrent(options)) throw radioAbortError();
+      const result = body.status === 'OK' ? body.results?.[0] : null;
+      if (result?.geometry?.location) {
+        return {
+          lat: result.geometry.location.lat,
+          lon: result.geometry.location.lng,
+          label: result.formatted_address || query,
+          country: '',
+        };
+      }
+    } finally {
+      clearTimeout(timer);
+      options.signal?.removeEventListener('abort', cancelFromTurn);
+    }
   }
+
+  // Fallback to Nominatim via proxy
+  const nomResults = await nominatimForward(query, { limit: 1 });
+  if (nomResults.length) {
+    const r = nomResults[0];
+    return { lat: r.lat, lon: r.lon, label: r.label || query, country: '' };
+  }
+  return null;
 }
 
 /** Voice Radio controls over the Radio layer's public player surface. */
@@ -2967,44 +2980,64 @@ function inferCountry(latitude, longitude) {
 }
 
 async function reverseGeocode(latitude, longitude) {
-  const apiKey = window.__GOOGLE_MAPS_API_KEY__;
-  if (!apiKey || !Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
+  if (!Number.isFinite(latitude) || !Number.isFinite(longitude)) return null;
   const key = reverseGeocodeKey(latitude, longitude);
   if (reverseGeocodeCache.has(key)) return reverseGeocodeCache.get(key);
   if (reverseGeocodeInFlight.has(key)) return reverseGeocodeInFlight.get(key);
 
+  const apiKey = window.__GOOGLE_MAPS_API_KEY__;
+
   const request = (async () => {
     try {
-      const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${latitude},${longitude}`)}&key=${apiKey}`;
-      const response = await fetchWithTimeout(url, {}, 5000);
-      const data = await response.json();
-      if (data.status !== 'OK' || !data.results?.length) {
-        reverseGeocodeCache.set(key, null);
-        return null;
+      // Try Google Geocoding if API key is available
+      if (apiKey) {
+        const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${encodeURIComponent(`${latitude},${longitude}`)}&key=${apiKey}`;
+        const response = await fetchWithTimeout(url, {}, 5000);
+        const data = await response.json();
+        if (data.status === 'OK' && data.results?.length) {
+          const result = data.results[0];
+          const relevantResults = data.results.slice(0, 12);
+          const components = Array.isArray(result.address_components) ? result.address_components : [];
+          const component = (type) => components.find((item) => item.types?.includes(type))?.long_name || null;
+          const labels = uniqueStrings(relevantResults.map((item) => item.formatted_address)).slice(0, 12);
+          const streetLabels = uniqueStrings(relevantResults.flatMap((item) => {
+            const itemComponents = Array.isArray(item.address_components) ? item.address_components : [];
+            return itemComponents
+              .filter((entry) => entry.types?.includes('route'))
+              .map((entry) => entry.long_name);
+          })).slice(0, 12);
+          const place = {
+            formattedAddress: result.formatted_address || null,
+            locality: component('locality') || component('postal_town') || component('administrative_area_level_2'),
+            region: component('administrative_area_level_1'),
+            country: component('country'),
+            types: result.types || [],
+            labels,
+            streetLabels,
+          };
+          reverseGeocodeCache.set(key, place);
+          return place;
+        }
       }
 
-      const result = data.results[0];
-      const relevantResults = data.results.slice(0, 12);
-      const components = Array.isArray(result.address_components) ? result.address_components : [];
-      const component = (type) => components.find((item) => item.types?.includes(type))?.long_name || null;
-      const labels = uniqueStrings(relevantResults.map((item) => item.formatted_address)).slice(0, 12);
-      const streetLabels = uniqueStrings(relevantResults.flatMap((item) => {
-        const itemComponents = Array.isArray(item.address_components) ? item.address_components : [];
-        return itemComponents
-          .filter((entry) => entry.types?.includes('route'))
-          .map((entry) => entry.long_name);
-      })).slice(0, 12);
-      const place = {
-        formattedAddress: result.formatted_address || null,
-        locality: component('locality') || component('postal_town') || component('administrative_area_level_2'),
-        region: component('administrative_area_level_1'),
-        country: component('country'),
-        types: result.types || [],
-        labels,
-        streetLabels,
-      };
-      reverseGeocodeCache.set(key, place);
-      return place;
+      // Fallback to Nominatim via proxy
+      const nomResult = await nominatimReverse(latitude, longitude, { zoom: 12 });
+      if (nomResult) {
+        const place = {
+          formattedAddress: nomResult.formattedAddress,
+          locality: nomResult.locality,
+          region: nomResult.region,
+          country: nomResult.country,
+          types: nomResult.types,
+          labels: nomResult.labels,
+          streetLabels: nomResult.streetLabels,
+        };
+        reverseGeocodeCache.set(key, place);
+        return place;
+      }
+
+      reverseGeocodeCache.set(key, null);
+      return null;
     } catch {
       return null;
     } finally {

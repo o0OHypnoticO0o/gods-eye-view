@@ -341,76 +341,66 @@ export function findPoiByName(query) {
 /** Distinguishes an authority veto from a genuine not-found result. */
 export const CANCELLED_SEARCH = Object.freeze({ cancelled: true });
 
-/** Free Nominatim (OpenStreetMap) geocoding fallback — no API key needed. */
-async function nominatimGeocode(query) {
-  try {
-    const url = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(query)}&format=json&limit=1&addressdetails=1`;
-    const res = await fetch(url, {
-      headers: { 'Accept': 'application/json' },
-      signal: AbortSignal.timeout(5000),
-    });
-    const data = await res.json();
-    if (!data.length) return null;
-    const r = data[0];
-    return {
-      lat: parseFloat(r.lat),
-      lng: parseFloat(r.lon),
-      label: r.display_name || query,
-      types: r.type ? [r.type] : [],
-    };
-  } catch { return null; }
-}
+/** Nominatim geocoding via the server-side /api/nominatim proxy. */
+import { nominatimForward } from './geocoding.js';
 
 /**
- * Geocode a place name using Google Geocoding API, then fly there at a scale
- * appropriate to the request. Countries and cities use their viewport by
- * default; precise landmarks/buildings use close landmark framing.
+ * Geocode a place name using Google Geocoding API (if key available) or
+ * Nominatim proxy, then fly there at a scale appropriate to the request.
  */
 export async function searchAndFlyTo(viewer, query, options = {}) {
   const apiKey = window.__GOOGLE_MAPS_API_KEY__ || import.meta.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) throw new Error('No Google Maps API key available for geocoding');
 
   const beforeFly = typeof options.beforeFly === 'function' ? options.beforeFly : null;
   const mayFly = () => beforeFly === null || beforeFly() !== false;
 
-  // Viewport-biased geocode — the same bias annotationResolver's geocodePlace uses:
-  // "Sixth Street" spoken over Austin must prefer the Sixth Street on screen, not a
-  // same-named road in another city (or the wrong end of town — the W 6th vs E 6th bug).
-  let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+  let lat = null, lng = null, label = null, types = [], viewport = null;
+
+  // Build viewport bias string for Google Geocoding
   const bias = viewportBias(viewer);
-  if (bias) url += `&bounds=${bias}`;
-  const response = await fetch(url);
-  const data = await response.json();
+  const viewbox = bias ? bias : undefined;
 
-  const result = (data.status === 'OK' && data.results?.length) ? data.results[0] : null;
-  let lat = result?.geometry.location.lat;
-  let lng = result?.geometry.location.lng;
-  let label = result ? result.formatted_address : null;
-  let types = result?.types || [];
-  let viewport = result ? (result.geometry.bounds || result.geometry.viewport) : null;
+  if (apiKey) {
+    // Try Google Geocoding first
+    try {
+      let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+      if (bias) url += `&bounds=${bias}`;
+      const response = await fetch(url);
+      const data = await response.json();
+      const result = (data.status === 'OK' && data.results?.length) ? data.results[0] : null;
+      if (result) {
+        lat = result.geometry.location.lat;
+        lng = result.geometry.location.lng;
+        label = result.formatted_address;
+        types = result.types || [];
+        viewport = result.geometry.bounds || result.geometry.viewport;
+      }
+    } catch { /* fall through to Nominatim */ }
+  }
 
-  // Fallback to Nominatim if Google Maps fails (invalid key, quota, etc.)
-  if (!result) {
-    const nom = await nominatimGeocode(query);
-    if (nom) {
-      lat = nom.lat;
-      lng = nom.lng;
-      label = nom.label;
-      types = nom.types;
+  // Fallback to Nominatim (via proxy) if Google failed or no key
+  if (lat == null) {
+    const results = await nominatimForward(query, { viewbox, limit: 1 });
+    if (results.length) {
+      const r = results[0];
+      lat = r.lat;
+      lng = r.lon;
+      label = r.label;
+      types = r.type ? [r.type] : [];
     }
   }
 
   // Places-near-view recovery (annotationResolver's twin): a missed geocode, or one
   // that landed implausibly far from the view centre, snaps back to a view-biased
   // Places hit within the trust bound — "the Capitol" means the one on screen.
-  const recovered = await placesNearViewRecovery(viewer, query, result ? { lat, lon: lng } : null);
+  const recovered = await placesNearViewRecovery(viewer, query, lat != null ? { lat, lon: lng } : null);
   if (recovered) {
     lat = recovered.lat;
     lng = recovered.lon;
     label = recovered.label || label || query;
     types = recovered.types || [];
     viewport = placesViewportToBounds(recovered.viewport) || viewport;
-  } else if (!result && lat == null) {
+  } else if (lat == null) {
     return null;
   }
 

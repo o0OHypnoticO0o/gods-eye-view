@@ -77,6 +77,12 @@ The dev server binds to **localhost** — your keys stay on your machine. Sharin
 
 **macOS shortcut:** `./scripts/dev-fresh.sh` clears the Vite cache and pulls your keys straight from the Keychain.
 
+### ⚙️ In-App Settings
+
+Click the **gear icon** (⚙) in the top navigation bar to open the **Settings panel**. Configure all API keys and service endpoints directly from the UI — no need to edit `.env` files after initial setup.
+
+Settings are saved server-side to `~/.gods-eye-view/settings.json` and survive browser clears. See [SETUP.md](SETUP.md) for a complete service-by-service guide including local hosting options.
+
 ---
 
 ## 🕐 The First Five Minutes
@@ -265,7 +271,7 @@ See [`docs/CURRENT-STATE.md`](docs/CURRENT-STATE.md) for the authoritative runti
 
 **The legend, one more time:** 🟢 **no signup** — works out of the box · 🟡 **free key** — register, paste, done · 🔴 **metered** — a billing-enabled account; costs are small but real.
 
-Most of the globe is 🟢: flights (anonymous), military traffic, satellites, earthquakes, CCTV, radio, bikeshare, space missions, mapped installations, and every bundled dataset run with **zero keys**.
+Most of the globe is 🟢: flights (anonymous), military traffic, satellites, earthquakes, CCTV, radio, bikeshare, space missions, mapped installations, and every bundled dataset run with **zero keys**. Enter keys via the in-app **Settings panel** (gear icon ⚙) or `.env` file. Full setup guide: **[SETUP.md](SETUP.md)**.
 
 ### What you need for the good experience
 

@@ -3,6 +3,7 @@ import { lookupNeighborhoodRing } from '../data/neighborhoodPolygons.js';
 import { lookupNaturalRegionOutline, findNaturalRegion } from '../data/naturalEarthRegions.js';
 import { registerDynamicCredit, NATURAL_EARTH_CREDIT } from '../data/dataCredits.js';
 import { isPickedWorldPosition } from '../data/scenePick.js';
+import { nominatimForward } from '../geocoding.js';
 
 /**
  * Annotation target resolver.
@@ -599,49 +600,66 @@ function ringAreaM2(ring) {
 }
 
 /**
- * Forward-geocode a place name via Google Geocoding, biased to the current
- * viewport so "the marina" resolves near where the user is looking.
+ * Forward-geocode a place name via Google Geocoding (if key available) or
+ * Nominatim proxy, biased to the current viewport.
  */
 async function geocodePlace(query, biasRect, signal) {
   const apiKey = window.__GOOGLE_MAPS_API_KEY__ || import.meta.env.GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return null;
 
   const cacheKey = `${query.toLowerCase()}|${biasRect || ''}`;
   const cached = cacheRead(geocodeCache, cacheKey);
   if (cached !== undefined) return cached;
 
-  let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
-  if (biasRect) url += `&bounds=${biasRect}`;
+  // Try Google Geocoding if API key is available
+  if (apiKey) {
+    let url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(query)}&key=${apiKey}`;
+    if (biasRect) url += `&bounds=${biasRect}`;
 
-  try {
-    const response = await fetch(url, { signal });
-    const data = await response.json();
-    if (data.status !== 'OK' || !data.results?.length) {
-      // ZERO_RESULTS is a definitive not-found (cacheable); OVER_QUERY_LIMIT /
-      // REQUEST_DENIED / UNKNOWN_ERROR are transient → don't poison the cache.
-      negCache(geocodeCache, cacheKey, signal, data?.status === 'ZERO_RESULTS');
-      return null;
+    try {
+      const response = await fetch(url, { signal });
+      const data = await response.json();
+      if (data.status === 'OK' && data.results?.length) {
+        const result = data.results[0];
+        const place = {
+          lat: result.geometry.location.lat,
+          lon: result.geometry.location.lng,
+          label: shortLabel(result.formatted_address),
+          primaryName: extractPrimaryName(result),
+          types: result.types || [],
+          viewport: normalizeGeocodeViewport(result.geometry?.bounds || result.geometry?.viewport),
+        };
+        cacheWrite(geocodeCache, cacheKey, place);
+        return place;
+      }
+      if (data.status === 'ZERO_RESULTS') {
+        negCache(geocodeCache, cacheKey, signal, true);
+        return null;
+      }
+    } catch {
+      negCache(geocodeCache, cacheKey, signal, false);
     }
-    const result = data.results[0];
-    const place = {
-      lat: result.geometry.location.lat,
-      lon: result.geometry.location.lng,
-      label: shortLabel(result.formatted_address),
-      // The CANONICAL name of the resolved feature (e.g. "Mission District",
-      // "Texas State Capitol") — used for OSM name-matching instead of the raw
-      // utterance, so incidental tokens ("...Texas", "...Austin") can't win.
-      primaryName: extractPrimaryName(result),
-      types: result.types || [],
-      // Geocode viewport (sw/ne box framing the feature), normalized to the Places
-      // low/high shape — sizes grounds discs and flyTo framing for geocode anchors.
-      viewport: normalizeGeocodeViewport(result.geometry?.bounds || result.geometry?.viewport),
-    };
-    cacheWrite(geocodeCache, cacheKey, place);
-    return place;
-  } catch {
-    negCache(geocodeCache, cacheKey, signal, false); // network/abort — transient
-    return null;
   }
+
+  // Fallback to Nominatim via proxy
+  try {
+    const results = await nominatimForward(query, { viewbox: biasRect, limit: 1, timeoutMs: 5000 });
+    if (results.length) {
+      const r = results[0];
+      const place = {
+        lat: r.lat,
+        lon: r.lon,
+        label: shortLabel(r.label),
+        primaryName: query,
+        types: r.type ? [r.type] : [],
+        viewport: null,
+      };
+      cacheWrite(geocodeCache, cacheKey, place);
+      return place;
+    }
+  } catch { /* fall through */ }
+
+  negCache(geocodeCache, cacheKey, signal, false);
+  return null;
 }
 
 /** Geocoding returns {southwest:{lat,lng},northeast:{lat,lng}}; normalize to the Places

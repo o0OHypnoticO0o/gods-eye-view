@@ -7375,6 +7375,319 @@ function normalizeAisTimestamp(value) {
   return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
 }
 
+// ---------------------------------------------------------------------------
+// Settings persistence — server-side JSON + .env fallbacks
+// ---------------------------------------------------------------------------
+const SETTINGS_DIR = path.join(process.env.HOME || process.env.USERPROFILE || '.', '.gods-eye-view');
+const SETTINGS_FILE = path.join(SETTINGS_DIR, 'settings.json');
+
+/** Keys whose values are masked (never sent to the client in full). */
+const SENSITIVE_KEYS = new Set([
+  'googleMapsApiKey', 'cesiumIonToken', 'openaiApiKey',
+  'aisstreamApiKey', 'firmsMapKey', 'tomtomApiKey',
+  'openskyClientId', 'openskyClientSecret',
+]);
+
+/** Schema: each key maps to its .env fallback and whether it's client-exposed. */
+const SETTINGS_SCHEMA = {
+  // Tier 0 — Core (required)
+  googleMapsApiKey:      { env: 'GOOGLE_MAPS_API_KEY', clientExposed: true,  tier: 'core', label: 'Google Maps API Key', required: true,  cost: '🔴 Paid ($200/mo free credit)', help: 'Enable Maps JavaScript API + Static Maps API at console.cloud.google.com' },
+  cesiumIonToken:        { env: 'CESIUM_ION_TOKEN',    clientExposed: true,  tier: 'core', label: 'Cesium Ion Token', required: false, cost: '🟡 Free key', help: 'Enables Bing imagery + Cesium World Terrain. Register at cesium.com/ion' },
+  // Tier 1 — Inference & Voice
+  openaiApiKey:          { env: 'OPENAI_API_KEY',       clientExposed: false, tier: 'inference', label: 'OpenAI API Key', required: false, cost: '🔴 Paid (metered)', help: 'Required for OpenAI Realtime voice. Skip if using local voice pipeline.' },
+  openaiBaseUrl:         { env: 'OPENAI_BASE_URL',      clientExposed: false, tier: 'inference', label: 'OpenAI Base URL', required: false, cost: '⚫ Local', help: 'Override for HUD summary. Default: https://api.openai.com. Set to LM Studio URL for local.', default: 'https://api.openai.com' },
+  openaiHudModel:        { env: 'OPENAI_HUD_SUMMARY_MODEL', clientExposed: false, tier: 'inference', label: 'HUD Summary Model', required: false, cost: '—', help: 'Model for HUD text summaries. Default: gpt-5-nano.', default: 'gpt-5-nano' },
+  openaiHudReasoning:    { env: 'OPENAI_HUD_SUMMARY_REASONING', clientExposed: false, tier: 'inference', label: 'HUD Reasoning Effort', required: false, cost: '—', help: 'Reasoning mode for HUD summary. Use "none" for LM Studio.', default: 'minimal' },
+  localVoiceWsUrl:       { env: 'LOCAL_VOICE_WS_URL',  clientExposed: true,  tier: 'inference', label: 'Local Voice WebSocket', required: false, cost: '⚫ Local', help: 'ws://host:port for local voice server. When set, bypasses OpenAI voice entirely.' },
+  // Tier 1b — Local voice pipeline endpoints
+  whisperUrl:            { env: 'WHISPER_URL',          clientExposed: false, tier: 'voice', label: 'Whisper STT URL', required: false, cost: '⚫ Local', help: 'http://host:port for Whisper.cpp server. Default: http://localhost:8080', default: 'http://localhost:8080' },
+  lmStudioUrl:           { env: 'LM_STUDIO_URL',       clientExposed: false, tier: 'voice', label: 'LM Studio URL', required: false, cost: '⚫ Local', help: 'http://host:port/v1 for LM Studio. Default: http://localhost:1234/v1', default: 'http://localhost:1234/v1' },
+  llmModel:              { env: 'LLM_MODEL',            clientExposed: false, tier: 'voice', label: 'LLM Model', required: false, cost: '—', help: 'Model name for local inference. Default: qwen3.6-35b-a3b-mtp', default: 'qwen3.6-35b-a3b-mtp' },
+  piperVoice:            { env: 'VOICE_MODEL',          clientExposed: false, tier: 'voice', label: 'Piper Voice Model', required: false, cost: '—', help: 'Voice model for TTS. Default: en_US-amy-medium', default: 'en_US-amy-medium' },
+  // Tier 2 — Data layer keys (free keys or paid)
+  aisstreamApiKey:       { env: 'AISSTREAM_API_KEY',    clientExposed: false, tier: 'layers', label: 'AISStream API Key', required: false, cost: '🟢 Free tier available', help: 'Live AIS vessel positions. Free tier at aisstream.io' },
+  firmsMapKey:           { env: 'FIRMS_MAP_KEY',        clientExposed: false, tier: 'layers', label: 'NASA FIRMS Key', required: false, cost: '🟢 Free key', help: 'Active fire detections. Get key at firms.modaps.eosdis.nasa.gov/api/map_key' },
+  tomtomApiKey:          { env: 'TOMTOM_API_KEY',       clientExposed: false, tier: 'layers', label: 'TomTom Traffic Key', required: false, cost: '🟡 Freemium (50k tiles/day)', help: 'Live traffic flow tiles. Free tier at developer.tomtom.com. Keyless = simulated traffic.' },
+  openskyAuthMode:       { env: 'OPENSKY_AUTH_MODE',    clientExposed: false, tier: 'layers', label: 'OpenSky Auth Mode', required: false, cost: '🟢 Free (anon) or 🟡 Free key (auth)', help: 'oauth|basic|auto|anon. Anon works but is rate-limited.', default: 'anon' },
+  openskyClientId:       { env: 'OPENSKY_CLIENT_ID',    clientExposed: false, tier: 'layers', label: 'OpenSky Client ID', required: false, cost: '🟡 Free key', help: 'OAuth credential from opensky-network.org. Only needed for oauth mode.' },
+  openskyClientSecret:   { env: 'OPENSKY_CLIENT_SECRET', clientExposed: false, tier: 'layers', label: 'OpenSky Client Secret', required: false, cost: '🟡 Free key', help: 'OAuth credential from opensky-network.org. Only needed for oauth mode.' },
+  // Tier 4 — Self-hosted services
+  nominatimUrl:          { env: 'NOMINATIM_URL',         clientExposed: false, tier: 'local', label: 'Nominatim Geocoder URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Nominatim for geocoding. Set to your Docker instance URL or leave empty to use public nominatim.openstreetmap.org.', default: '' },
+};
+
+/** Tier display metadata. */
+const TIER_META = {
+  core:      { label: 'CORE SERVICES',  icon: '🌐', description: 'Required for the app to function' },
+  inference: { label: 'INFERENCE & VOICE', icon: '🧠', description: 'Choose cloud (OpenAI) or local (LM Studio + Whisper + Piper)' },
+  voice:     { label: 'LOCAL VOICE PIPELINE', icon: '🎙️', description: 'Endpoints for local voice server components' },
+  layers:    { label: 'DATA LAYERS', icon: '📡', description: 'Optional API keys for additional live data feeds' },
+  local:     { label: 'SELF-HOSTED SERVICES', icon: '🏠', description: 'Self-hosted alternatives to cloud APIs' },
+};
+
+/**
+ * Read the persisted settings file. Returns empty object if missing/corrupt.
+ * @returns {Record<string, string>}
+ */
+function readSettingsFile() {
+  try {
+    const raw = fs.readFileSync(SETTINGS_FILE, 'utf-8');
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Write settings to disk, creating the directory if needed.
+ * @param {Record<string, string>} settings
+ */
+function writeSettingsFile(settings) {
+  fs.mkdirSync(SETTINGS_DIR, { recursive: true });
+  fs.writeFileSync(SETTINGS_FILE, JSON.stringify(settings, null, 2) + '\n', 'utf-8');
+}
+
+/**
+ * Merge persisted settings with .env fallbacks. Sensitive keys are masked.
+ * @param {Record<string, string>} persisted
+ * @returns {Record<string, object>}
+ */
+function buildMergedSettings(persisted) {
+  const merged = {};
+  for (const [key, schema] of Object.entries(SETTINGS_SCHEMA)) {
+    const persistedValue = persisted[key] ?? '';
+    const envValue = process.env[schema.env] ?? '';
+    const value = persistedValue || envValue || schema.default || '';
+    const hasValue = Boolean(value);
+    merged[key] = {
+      value: hasValue && SENSITIVE_KEYS.has(key) ? maskValue(value) : value,
+      rawValue: value,
+      hasValue,
+      tier: schema.tier,
+      label: schema.label,
+      required: schema.required,
+      cost: schema.cost,
+      help: schema.help,
+      clientExposed: schema.clientExposed,
+      envKey: schema.env,
+      default: schema.default || '',
+    };
+  }
+  return merged;
+}
+
+/** Mask a sensitive value: show first 4 and last 4 chars. */
+function maskValue(v) {
+  if (typeof v !== 'string' || v.length <= 10) return '••••••••';
+  return v.slice(0, 4) + '•'.repeat(v.length - 8) + v.slice(-4);
+}
+
+/** Read the full request body as a string. */
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    let data = '';
+    req.on('data', (chunk) => { data += chunk; });
+    req.on('end', () => resolve(data));
+    req.on('error', reject);
+  });
+}
+
+/** Send a JSON response. */
+function settingsJson(res, status, body) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.end(JSON.stringify(body));
+}
+
+function settingsPlugin() {
+  const install = (server) => {
+    server.middlewares.use('/api/settings', async (req, res) => {
+      // CORS preflight
+      if (req.method === 'OPTIONS') {
+        res.writeHead(204, {
+          'Access-Control-Allow-Origin': '*',
+          'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+          'Access-Control-Allow-Headers': 'Content-Type',
+        });
+        res.end();
+        return;
+      }
+
+      if (req.method === 'GET') {
+        const persisted = readSettingsFile();
+        const merged = buildMergedSettings(persisted);
+        // Client only needs display values, not raw sensitive ones
+        const clientSafe = {};
+        for (const [key, entry] of Object.entries(merged)) {
+          clientSafe[key] = {
+            value: entry.value,
+            hasValue: entry.hasValue,
+            tier: entry.tier,
+            label: entry.label,
+            required: entry.required,
+            cost: entry.cost,
+            help: entry.help,
+            clientExposed: entry.clientExposed,
+            envKey: entry.envKey,
+            default: entry.default,
+          };
+        }
+        settingsJson(res, 200, {
+          settings: clientSafe,
+          tiers: TIER_META,
+          settingsFile: SETTINGS_FILE,
+        });
+        return;
+      }
+
+      if (req.method === 'PUT') {
+        try {
+          const body = await readBody(req);
+          const incoming = JSON.parse(body);
+          if (!incoming || typeof incoming !== 'object') {
+            settingsJson(res, 400, { error: 'Request body must be a JSON object' });
+            return;
+          }
+          // Validate keys
+          const persisted = readSettingsFile();
+          const allowed = new Set(Object.keys(SETTINGS_SCHEMA));
+          for (const [key, value] of Object.entries(incoming)) {
+            if (!allowed.has(key)) {
+              settingsJson(res, 400, { error: `Unknown setting: ${key}` });
+              return;
+            }
+            if (typeof value !== 'string') {
+              settingsJson(res, 400, { error: `Setting "${key}" must be a string` });
+              return;
+            }
+            persisted[key] = value;
+          }
+          writeSettingsFile(persisted);
+          const merged = buildMergedSettings(persisted);
+          const clientSafe = {};
+          for (const [key, entry] of Object.entries(merged)) {
+            clientSafe[key] = {
+              value: entry.value,
+              hasValue: entry.hasValue,
+              tier: entry.tier,
+              label: entry.label,
+              required: entry.required,
+              cost: entry.cost,
+              help: entry.help,
+              clientExposed: entry.clientExposed,
+              envKey: entry.envKey,
+              default: entry.default,
+            };
+          }
+          settingsJson(res, 200, { ok: true, settings: clientSafe });
+        } catch (err) {
+          settingsJson(res, 400, { error: `Invalid JSON: ${err.message}` });
+        }
+        return;
+      }
+
+      settingsJson(res, 405, { error: 'Method not allowed. Use GET or PUT.' });
+    });
+  };
+
+  return {
+    name: 'settings-api',
+    configureServer: install,
+    configurePreviewServer: install,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Nominatim geocoder proxy — routes /api/nominatim/* to configured instance
+// ---------------------------------------------------------------------------
+const NOMINATIM_PUBLIC_URL = 'https://nominatim.openstreetmap.org';
+const NOMINATIM_USER_AGENT = 'GodsEyeView/1.0 (https://github.com/bilawalsidhu/gods-eye-view)';
+/** Minimum gap between Nominatim requests (ms) — respects 1 req/s policy. */
+const NOMINATIM_PROXY_MIN_GAP_MS = 1100;
+let _nominatimProxyLastRequestAt = 0;
+
+/**
+ * Resolve the Nominatim base URL: settings.json > .env > public.
+ * @returns {string}
+ */
+function resolveNominatimUrl() {
+  const persisted = readSettingsFile();
+  const settingsUrl = persisted.nominatimUrl || '';
+  const envUrl = process.env.NOMINATIM_URL || '';
+  return settingsUrl || envUrl || NOMINATIM_PUBLIC_URL;
+}
+
+function nominatimProxy() {
+  const install = (server) => {
+    server.middlewares.use('/api/nominatim', async (req, res) => {
+      const requestUrl = new URL(req.url || '/', 'http://localhost');
+      const mode = requestUrl.searchParams.get('mode') || 'search'; // 'search' or 'reverse'
+      const baseUrl = resolveNominatimUrl();
+
+      // Rate-limit: enforce minimum gap between upstream requests
+      const now = Date.now();
+      const waitMs = NOMINATIM_PROXY_MIN_GAP_MS - (now - _nominatimProxyLastRequestAt);
+      if (waitMs > 0) {
+        await new Promise((r) => setTimeout(r, waitMs));
+      }
+
+      try {
+        let upstreamUrl;
+        if (mode === 'reverse') {
+          const lat = requestUrl.searchParams.get('lat');
+          const lon = requestUrl.searchParams.get('lon');
+          const zoom = requestUrl.searchParams.get('zoom') || '10';
+          if (!lat || !lon) {
+            settingsJson(res, 400, { error: 'Missing lat/lon for reverse geocode' });
+            return;
+          }
+          upstreamUrl = `${baseUrl}/reverse?format=json&lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}&zoom=${encodeURIComponent(zoom)}&addressdetails=1&accept-language=en`;
+        } else {
+          const q = requestUrl.searchParams.get('q');
+          const limit = requestUrl.searchParams.get('limit') || '5';
+          const viewbox = requestUrl.searchParams.get('viewbox') || '';
+          if (!q) {
+            settingsJson(res, 400, { error: 'Missing q parameter for search' });
+            return;
+          }
+          upstreamUrl = `${baseUrl}/search?q=${encodeURIComponent(q)}&format=json&limit=${encodeURIComponent(limit)}&addressdetails=1`;
+          if (viewbox) upstreamUrl += `&viewbox=${encodeURIComponent(viewbox)}&bounded=0`;
+        }
+
+        _nominatimProxyLastRequestAt = Date.now();
+        const upstreamRes = await fetch(upstreamUrl, {
+          headers: {
+            'User-Agent': NOMINATIM_USER_AGENT,
+          },
+          signal: AbortSignal.timeout(8000),
+        });
+
+        if (!upstreamRes.ok) {
+          const body = await upstreamRes.text().catch(() => '');
+          settingsJson(res, upstreamRes.status, {
+            error: `Nominatim upstream ${upstreamRes.status}`,
+            details: body.slice(0, 200),
+          });
+          return;
+        }
+
+        const data = await upstreamRes.json();
+        settingsJson(res, 200, data);
+      } catch (err) {
+        settingsJson(res, 502, { error: `Nominatim proxy error: ${err.message}` });
+      }
+    });
+  };
+
+  return {
+    name: 'nominatim-proxy',
+    configureServer: install,
+    configurePreviewServer: install,
+  };
+}
+
 /**
  * Main Vite configuration factory.
  *
@@ -7392,6 +7705,8 @@ export default defineConfig(({ mode }) => {
   const env = { ...process.env };
   return {
     plugins: [
+      settingsPlugin(),
+      nominatimProxy(),
       cesium(),
       openSkyProxy(),
       celestrakProxy(),

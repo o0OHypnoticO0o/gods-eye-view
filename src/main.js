@@ -21,6 +21,7 @@ import { SceneDirector } from './scenes/director.js';
 import { initGevVoiceCommands } from './voice/gevRealtime.js';
 import { initLocalVoiceCommands } from './voice/localVoice.js';
 import { initEntityEnrichment } from './voice/entityEnrichment.js';
+import { SettingsManager } from './settings.js';
 
 // ── Mobile context rail toggle ─────────────────────────────────────────────────
 (function initMobileContextToggle() {
@@ -232,6 +233,11 @@ async function init() {
 
     // Initialize the style manager (post-processing, HUD, locations, share links)
     const styleManager = new StyleManager(viewer, { mapStackController });
+
+    // Initialize settings panel (API key management)
+    const settingsManager = new SettingsManager();
+    settingsManager.init().catch((err) => console.warn('[Settings] Init failed:', err));
+
     // The previous multi-canvas weather compositor remains disabled. Cockpit
     // clouds use a separate, capped low-resolution GPU pass that never attaches
     // Cesium fog or post-process stages and is fully stopped in map mode.
