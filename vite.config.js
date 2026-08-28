@@ -2563,7 +2563,7 @@ async function fetchOverpassPayload(body, maxResponseBytes = OVERPASS_MAX_RESPON
   let lastError = null;
   let lastRateLimitPayload = null;
 
-  for (const endpoint of OVERPASS_UPSTREAMS) {
+  for (const endpoint of resolveOverpassUpstreams()) {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), OVERPASS_TIMEOUT_MS);
 
@@ -2808,7 +2808,14 @@ function overpassProxy() {
             res.end(JSON.stringify(cached.payload));
             return;
           }
-          const upstream = `https://routing.openstreetmap.de/routed-${profile}/route/v1/${osrmProfile}/${coords}?overview=full&geometries=geojson&alternatives=false&steps=false`;
+          const osrmBase = resolveOsrmUrl();
+          // FOSSGIS public servers use /routed-{appProfile}/ prefix; self-hosted
+          // OSRM follows the standard API at /route/v1/{osrmProfile}/.
+          const isPublicFossgis = osrmBase === 'https://routing.openstreetmap.de';
+          const routePath = isPublicFossgis
+            ? `/routed-${profile}/route/v1/${osrmProfile}/${coords}`
+            : `/route/v1/${osrmProfile}/${coords}`;
+          const upstream = `${osrmBase}${routePath}?overview=full&geometries=geojson&alternatives=false&steps=false`;
           const controller = new AbortController();
           const timer = setTimeout(() => controller.abort(), 12000);
           let osrm;
@@ -7081,7 +7088,7 @@ function fetchRegionalPlace(point) {
       addressdetails: '1',
       'accept-language': 'en',
     });
-    const payload = await fetchRegionalJson(`https://nominatim.openstreetmap.org/reverse?${params}`, {
+    const payload = await fetchRegionalJson(`${resolveNominatimUrl()}/reverse?${params}`, {
       headers: {
         'User-Agent': 'GodsEyeView/0.1 (+https://github.com/bilawalsidhu/gods-eye-view)',
         Referer: 'https://github.com/bilawalsidhu/gods-eye-view',
@@ -7138,7 +7145,7 @@ async function fetchRegionalWeather(point) {
     timezone: 'UTC',
   });
   try {
-    const payload = await fetchRegionalJson(`https://api.open-meteo.com/v1/forecast?${params}`, {
+    const payload = await fetchRegionalJson(`${resolveOpenMeteoUrl()}/v1/forecast?${params}`, {
       maxBytes: WEATHER_EFFECTS_MAX_RESPONSE_BYTES,
     });
     return normalizeRegionalWeather(payload);
@@ -7415,7 +7422,7 @@ const SETTINGS_SCHEMA = {
   nominatimUrl:          { env: 'NOMINATIM_URL',         clientExposed: false, tier: 'local', label: 'Nominatim Geocoder URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Nominatim for geocoding. Set to your Docker instance URL or leave empty to use public nominatim.openstreetmap.org.', default: '', quality: { score: 5, label: 'Excellent', note: 'Full geocoding with OpenStreetMap data. ~700MB RAM for Texas extract.' }, setupUrl: 'https://github.com/mediagis/nominatim-docker' },
   overpassUrl:           { env: 'OVERPASS_URL',          clientExposed: false, tier: 'local', label: 'Overpass API URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Overpass API for OSM queries. Leave empty to use public overpass-api.de.', default: '', quality: { score: 4, label: 'Very Good', note: 'Full OSM query support. ~2GB RAM for planet extract.' }, setupUrl: 'https://github.com/drolbr/Overpass-API' },
   osrmUrl:               { env: 'OSRM_URL',             clientExposed: false, tier: 'local', label: 'OSRM Routing URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted OSRM for routing. Leave empty to use public routing.openstreetmap.de.', default: '', quality: { score: 4, label: 'Very Good', note: 'Fast routing engine. Texas extract ~500MB RAM.' }, setupUrl: 'https://project-osrm.org/docs/v5.27.1/' },
-  osmTilesUrl:           { env: 'OSM_TILES_URL',        clientExposed: false, tier: 'local', label: 'OSM Tile Server URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted OSM tile server. Leave empty to use public tile.openstreetmap.org.', default: '', quality: { score: 3, label: 'Good', note: 'Basic map tiles. No 3D or photorealistic. ~10GB disk for planet.' }, setupUrl: 'https://github.com/Overv/openstreetmap-tile-server' },
+  osmTilesUrl:           { env: 'OSM_TILES_URL',        clientExposed: true,  tier: 'local', label: 'OSM Tile Server URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted OSM tile server. Leave empty to use public tile.openstreetmap.org.', default: '', quality: { score: 3, label: 'Good', note: 'Basic map tiles. No 3D or photorealistic. ~10GB disk for planet.' }, setupUrl: 'https://github.com/Overv/openstreetmap-tile-server' },
   openMeteoUrl:          { env: 'OPEN_METEO_URL',       clientExposed: false, tier: 'local', label: 'Open-Meteo Weather URL', required: false, cost: '⚫ Local (or public)', help: 'Self-hosted Open-Meteo for weather data. Leave empty to use public api.open-meteo.com.', default: '', quality: { score: 5, label: 'Excellent', note: 'Open-source weather API. Near-identical to cloud version.' }, setupUrl: 'https://open-meteo.com/en/docs' },
 };
 
@@ -7665,6 +7672,36 @@ function resolveNominatimUrl() {
   const settingsUrl = persisted.nominatimUrl || '';
   const envUrl = process.env.NOMINATIM_URL || '';
   return settingsUrl || envUrl || NOMINATIM_PUBLIC_URL;
+}
+
+/** Resolve the Overpass API endpoint list: settings.json (single URL or comma-separated) > .env > public mirrors. */
+function resolveOverpassUpstreams() {
+  const persisted = readSettingsFile();
+  const settingsUrl = (persisted.overpassUrl || '').trim();
+  if (settingsUrl) return settingsUrl.split(',').map((s) => s.trim()).filter(Boolean);
+  const envUrl = (process.env.OVERPASS_URL || '').trim();
+  if (envUrl) return envUrl.split(',').map((s) => s.trim()).filter(Boolean);
+  return OVERPASS_UPSTREAMS;
+}
+
+/** Resolve the OSRM routing base URL: settings.json > .env > public. */
+function resolveOsrmUrl() {
+  const persisted = readSettingsFile();
+  const settingsUrl = (persisted.osrmUrl || '').trim();
+  if (settingsUrl) return settingsUrl.replace(/\/+$/, '');
+  const envUrl = (process.env.OSRM_URL || '').trim();
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  return 'https://routing.openstreetmap.de';
+}
+
+/** Resolve the Open-Meteo base URL: settings.json > .env > public. */
+function resolveOpenMeteoUrl() {
+  const persisted = readSettingsFile();
+  const settingsUrl = (persisted.openMeteoUrl || '').trim();
+  if (settingsUrl) return settingsUrl.replace(/\/+$/, '');
+  const envUrl = (process.env.OPEN_METEO_URL || '').trim();
+  if (envUrl) return envUrl.replace(/\/+$/, '');
+  return 'https://api.open-meteo.com';
 }
 
 function nominatimProxy() {

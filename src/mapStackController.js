@@ -91,6 +91,15 @@ export class MapStackController {
     if (!this.getStack(this._activeId) || !this.isStackAvailable(this._activeId)) {
       this._activeId = googleTileset ? 'photoreal' : 'osm';
     }
+
+    // Invalidate OSM imagery cache when the tile server URL changes in settings.
+    this._onSettingsChanged = (e) => {
+      const s = e?.detail?.settings;
+      if (s && this._imageryProviders.has('osm')) {
+        this._imageryProviders.delete('osm');
+      }
+    };
+    window.addEventListener('gev:settings-changed', this._onSettingsChanged);
   }
 
   getStacks() {
@@ -257,8 +266,18 @@ export class MapStackController {
     if (stack.kind === 'ion') {
       provider = await Cesium.createWorldImageryAsync({ style: stack.style });
     } else if (stack.kind === 'osm') {
+      // Read configured tile server URL from settings; fall back to public OSM.
+      let tileUrl = 'https://tile.openstreetmap.org/';
+      try {
+        const res = await fetch('/api/settings');
+        if (res.ok) {
+          const data = await res.json();
+          const configured = data?.settings?.osmTilesUrl?.value;
+          if (configured) tileUrl = configured.replace(/\/+$/, '/');
+        }
+      } catch { /* use default */ }
       provider = new Cesium.OpenStreetMapImageryProvider({
-        url: 'https://tile.openstreetmap.org/',
+        url: tileUrl,
         credit: DEFAULT_OSM_CREDIT,
       });
     } else {
